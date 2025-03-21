@@ -1,8 +1,9 @@
 import tkinter as tk
 from tkinter import Menu
-
-
-
+import toolbox
+import tracer
+import os
+import drive_variables
 
 class BackupGUI:
     def __init__(root):
@@ -61,7 +62,24 @@ class BackupGUI:
 
 
         def button1_click():
-            print("Button 1 clicked")
+            try:
+                print("Button 1 was clicked")
+                tracer.log(f"The button1 was clicked")
+                path = get_text_field(text_field1)
+                tracer.log(f"The path was fetched at {path}")
+                toolbox.initialize_database(path)
+                tracer.log("Database initialized")
+                list_of_files = toolbox.list_files_in_folder(path)
+                tracer.log(f"list of files explored, there are {len(list_of_files)} files")
+                dic_of_checksum_files = toolbox.dic_of_checksums(list_of_files)
+                tracer.log(f"checksums computed, there are {len(dic_of_checksum_files)} checksums")
+                dic_of_files = {checksum: toolbox.split_different_files(files) for checksum, files in dic_of_checksum_files.items()}
+                tracer.log(f"files are now split into {sum([len(dic_of_files[checksum]) for checksum in dic_of_files])} distinct files")
+                json_path = os.path.join(path, drive_variables.drive_info, drive_variables.fileinfo_json)
+                toolbox.save_dic_to_json(dic_of_files, json_path)
+            except Exception as e:
+                tracer.log(f"An error occurred {e}")
+        
         root.button1_click = button1_click
         def button2_click():
             print("Button 2 clicked")
@@ -86,3 +104,10 @@ class BackupGUI:
     
     def mainloop(root):
         root.rootTK.mainloop()
+
+
+def get_text_field(text_field):
+    path = text_field.get()
+    if not os.path.isdir(path):
+        raise ValueError(f"Path '{path}' does not exist or is not a directory")
+    return path
