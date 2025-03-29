@@ -3,6 +3,9 @@ Start firing up your backup with unique classification of documents freely buy c
 ```
 clone repo
 cd backup_gui
+python3 -m venv myenv
+source myenv/bin/activate
+pip install -r requirements.txt
 python3 backup_gui
 ```
 
