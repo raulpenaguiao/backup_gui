@@ -71,19 +71,19 @@ class BackupGUI:
         root.dropdownDrives['values'] = [d for d in drive_variables.drives if os.path.exists(d)]
 
     #region Button click functions
-    def buttonCreateDatabase_click():
+    def buttonCreateDatabase_click(root):
         print("buttonCreateDatabase was clicked")
 
-    def buttonAddDriveLocation_click():
+    def buttonAddDriveLocation_click(root):
         print("buttonAddDriveLocation was clicked")
     
-    def buttonRemoveDrive_click():
+    def buttonRemoveDrive_click(root):
         print("buttonRemoveDrive was clicked")
     
-    def buttonCreateUniques_click():
+    def buttonCreateUniques_click(root):
         print("buttonCreateUniques was clicked")
     
-    def buttonCreateStatistics_click():
+    def buttonCreateStatistics_click(root):
         print("buttonCreateStatistics was clicked")
     #endregion
     
