@@ -9,7 +9,7 @@ log_file_path = os.path.join(current_dir, "backup_gui.log")
 
 
 def timestamp():
-    return time.strftime("%Y-%m-%d %H:%M:%S")
+    return time.strftime("%y%m%d%H%M%S") + f"{int(time.time() * 1000) % 1000:03d}"
 
 def log(line):
     caller_name = inspect.currentframe().f_back.f_code.co_name

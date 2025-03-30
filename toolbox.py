@@ -52,7 +52,79 @@ def split_different_files(files):
             split_files.append([file])
     return split_files
 
+def create_statistics_pictures(drive_path):
+    """
+    Creates statistics pictures based on the files in the database.
+    This function generates a pie chart and a histogram to visualize the distribution of file sizes
+    and extensions in the database. The data is read from a JSON file containing file metadata.
+    """
+    drive_info_folder_full_path = os.path.join(drive_path, drive_variables.drive_folder_info)
+    tracer.log("drive_info_folder_full_path" + drive_info_folder_full_path)
+    drive_info_json_full_path = os.path.join(drive_info_folder_full_path, drive_variables.fileinfo_json)
+    tracer.log("drive_info_json_full_path" + drive_info_json_full_path)
 
+    # Read the JSON file containing file metadata
+    with open(drive_info_json_full_path, 'r') as f:
+        data = json.load(f)
+    tracer.log("json opened, it has " + str(len(data)) + " files")
+    files = [file_list[0][0] for checksum, file_list in data.items()]
+    tracer.log("files created, it has " + str(len(files)) + " files")
+    
+    # Create a DataFrame from the JSON data
+    df = pd.DataFrame(files)
+    tracer.log("dataframe created, it has " + str(len(df)) + " files")
+    # Create a pie chart for top 15 file extensions
+    extension_counts = Counter(df['extention'])
+    extension_counts = dict(extension_counts.most_common(15))
+    plt.figure(figsize=(10, 6))
+    plt.pie(extension_counts.values(), labels=extension_counts.keys(), autopct='%1.1f%%')
+    plt.title('File Extensions Distribution')
+    plt.savefig(os.path.join(drive_info_folder_full_path, drive_variables.extension_distribution))
+    plt.close()
+    tracer.log("extention pie chart created, saved in " + str(os.path.join(drive_info_folder_full_path, drive_variables.extension_distribution)))
+
+    # Create a histogram for file sizes
+    plt.figure(figsize=(10, 6))
+    plt.hist(df['size'], bins=50, color='blue', alpha=0.7)
+    plt.title('File Size Distribution')
+    plt.xlabel('Size (bytes)')
+    plt.ylabel('Frequency')
+    plt.savefig(os.path.join(drive_info_folder_full_path, drive_variables.file_size_histogram))
+    plt.close()
+    tracer.log("file size histogram created, saved in " + str(os.path.join(drive_info_folder_full_path, drive_variables.file_size_histogram)))
+    
+    #Create a record of all the number of copies for each file
+    file_repetitions = []
+    for _, file_list in data.items():
+        file_repetitions += [len(fl) for fl in file_list]
+
+    repetition_counts = {}
+    for c in file_repetitions:
+        if c not in repetition_counts:
+            repetition_counts[c] = 0
+        repetition_counts[c] += 1
+    tracer.log("repetitions = " + str(repetition_counts))
+    plt.figure(figsize=(10, 6))
+    plt.bar(repetition_counts.keys(), repetition_counts.values(), color='green', alpha=0.7)
+    plt.title('File Repetition Count')
+    plt.xlabel('Number of Copies')
+    plt.ylabel('Frequency')
+    plt.savefig(os.path.join(drive_info_folder_full_path, drive_variables.file_repetition_count))
+    plt.close()
+    tracer.log("repetition histogram created, saved in " + str(os.path.join(drive_info_folder_full_path, drive_variables.file_repetition_count)))
+
+    # Create a histogram for file creation times
+    creation_times = pd.to_datetime(df['date-created'], unit='s')
+    plt.figure(figsize=(10, 6))
+    plt.hist(creation_times, bins=50, color='purple', alpha=0.7)
+    plt.title('File Creation Time Distribution')
+    plt.xlabel('Creation Time')
+    plt.ylabel('Frequency')
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.savefig(os.path.join(drive_info_folder_full_path, drive_variables.file_creation_time_histogram))
+    plt.close()
+    tracer.log("creatin time histogram created, saved in " + str(os.path.join(drive_info_folder_full_path, drive_variables.file_creation_time_histogram)))
 
 def list_files_in_folder(folder_path, verbose=False):
     """
@@ -82,7 +154,7 @@ def list_files_in_folder(folder_path, verbose=False):
                     file_data = f.read()
                     checksum = hashlib.md5(file_data).hexdigest()
                     size = os.path.getsize(file_path)
-                    extention = os.path.splitext(file_path)[1]
+                    extention = os.path.splitext(file_path)[1].lower()
                     datem = os.path.getmtime(file_path)
                     datec = os.path.getctime(file_path)
                     datea = os.path.getatime(file_path)
@@ -104,19 +176,17 @@ def list_files_in_folder(folder_path, verbose=False):
         tracer.log(f"An error occurred: {e}")
     return list_of_files
 
-
 def initialize_database(path_to_dir):
     """
     Initializes a database of files in the given directory by deleting all database files on it
     Args:
         path_to_dir (str): The path to the directory to create the database from.
     """
-    drive_path = os.path.join(path_to_dir, drive_variables.drive_info)
+    drive_path = os.path.join(path_to_dir, drive_variables.drive_folder_info)
     if os.path.exists(drive_path):
         shutil.rmtree(drive_path)
     os.mkdir(drive_path)
     return
-
 
 def dic_of_checksums(list_of_files):
     dic = {file["checksum"]: [] for file in list_of_files}

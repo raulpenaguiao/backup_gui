@@ -18,14 +18,14 @@ def get_saved_drives():
         with open(config_file_path, 'r') as f:
             return json.load(f)
     else:
-        return { 'locations' : [] }
+        return []
 
 def initialize_drives():
     current_dir = os.path.dirname(os.path.abspath(__file__))
     drives_file_path = os.path.join(current_dir, "drives.json")
     if not os.path.exists(drives_file_path):
         with open(drives_file_path, 'w') as f:
-            json.dump({ 'locations' : [] }, f, indent=1)
+            json.dump([], f, indent=1)
 
 
 def update_drives_list(drives):
