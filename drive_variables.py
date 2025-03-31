@@ -1,5 +1,6 @@
 drive_folder_info = ".drive_info"
 fileinfo_json = "fileinfo.json"
+copies_report_txt = "copies_report.txt"
 drives = []
 
 extension_distribution = 'extension_distribution.png'

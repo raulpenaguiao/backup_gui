@@ -1,7 +1,7 @@
 # backup system files
 drives.json
 logs/*
-
+copies_report.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

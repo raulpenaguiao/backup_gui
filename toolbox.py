@@ -188,8 +188,49 @@ def initialize_database(path_to_dir):
     os.mkdir(drive_path)
     return
 
+def create_comparison_report(files_1, files_2):
+    """
+    Compares two lists of files and generates a report of the differences.
+    Args:
+        files_1 (list): The first list of file dictionaries to compare.
+        files_2 (list): The second list of file dictionaries to compare.
+    Returns:
+        list: A list of dictionaries containing the differences between the two lists of files.
+    """
+    comparison = {}
+    for checksum in files_1:
+        if checksum not in files_2:
+            comparison[checksum] = files_1[checksum]
+        else:
+            for file in files_1[checksum]:
+                if file not in files_2[checksum]:
+                    if checksum not in comparison:
+                        comparison[checksum] = []
+                    comparison[checksum].append(file)
+    print("comparison", comparison)
+    return comparison
+
 def dic_of_checksums(list_of_files):
     dic = {file["checksum"]: [] for file in list_of_files}
     for file in list_of_files:
         dic[file["checksum"]].append(file)
     return dic
+
+def create_copies_report(path_to_drive):
+
+    drive_info_folder_full_path = os.path.join(path_to_drive, drive_variables.drive_folder_info)
+    drive_info_json_full_path = os.path.join(drive_info_folder_full_path, drive_variables.fileinfo_json)
+    # Read the JSON file containing file metadata
+    with open(drive_info_json_full_path, 'r') as f:
+        data = json.load(f)
+    
+    repeated_files = []
+    for checksum in data:
+        for file_list in data[checksum]:
+            if len(file_list) > 1:
+                repeated_files.append(file_list)
+    return repeated_files
+                
+
+
+

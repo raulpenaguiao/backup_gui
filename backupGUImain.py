@@ -6,6 +6,17 @@ import tracer
 import os
 import drive_variables
 import dbs
+from widgets.file_selection_popup import FileSelectionPopup
+
+
+
+
+def get_text_field(text_field):
+    path = text_field.get()
+    if not os.path.isdir(path):
+        raise ValueError(f"Error 93182: Path '{path}' does not exist or is not a directory")
+    return path
+
 
 class BackupGUI:
     def __init__(root):
@@ -191,8 +202,36 @@ class BackupGUI:
             tracer.log(f"Error 56425: {e}")
     
     def buttonDBCopies_click(root):
+        tracer.log("")
         try:
-            tracer.log("")
+            repeated_files = toolbox.create_copies_report(get_text_field(root.dropdownDrives))
+            tracer.clear_log(drive_variables.copies_report_txt)
+            number_of_repetitions = len(repeated_files)
+            for index, repetition in enumerate(repeated_files):
+                message = "Files in these locations are the same:\n"
+                for file in repetition:
+                    message += (" "*4) + file['file_path'] + "\n"
+                tracer.log_to_report(message, drive_variables.copies_report_txt)
+                tracer.log("Message written on the report.")
+                result = None
+                popup = FileSelectionPopup(root.rootTK, repetition, index, number_of_repetitions, result)
+                
+                root.rootTK.wait_window(popup)
+                if result[0] == "keep this":
+                    for file in repetition:
+                        if file['file_path'] == result[1]:
+                            tracer.log(f"Deleting file: {file['file_path']}")
+                            break
+                elif result[0] == "keep all":
+                    tracer.log("Keeping all files in this repetition.")
+                elif result[0] == "leave":
+                    tracer.log("Leaving selection menu without changes.")
+                    break
+                else:
+                    raise ValueError(f"Error 93182: Invalid result from file selection popup: {result}")
+            tracer.log("Report created")
+
+
         except Exception as e:
             tracer.log(f"Error 56425: {e}")
 
@@ -205,20 +244,33 @@ class BackupGUI:
 
             # Add a label to the panel_frame
             label = tk.Label(root.panel_frame, text="Creation of new and unique files", font=("Arial", 16))
-            label.grid(row=0, column=0, columnspan=2, pady=10)
+            label.grid(row=0, column=0, columnspan=4, pady=10)
 
             # Add a label and text input field
             label_input = tk.Label(root.panel_frame, text="Location of new drive")
-            label_input.grid(row=1, column=0, columnspan=2, pady=5)
+            label_input.grid(row=1, column=0, columnspan=4, pady=5)
 
             text_input = tk.Entry(root.panel_frame, width=50)
-            text_input.grid(row=2, column=0, columnspan=2, pady=5)
+            text_input.grid(row=2, column=1, columnspan=2, pady=5)
+
+            def compareWithDatabase_click(root):
+                tracer.log("")
+                toolbox.create_comparison_report( get_text_field(text_input), root.dropdownDrives.get())
+
+
+            def createNewDatabase_click(root):
+                tracer.log("")
+                toolbox.create_comparison_report( get_text_field(text_input), text_input.get())
+
 
             # Add buttons for unique menu actions
-            button_initialize_drive = tk.Button(root.panel_frame, text="Initialize Drive", command=lambda: toolbox.initialize_drive(get_text_field(text_input)))
+            button_initialize_drive = tk.Button(root.panel_frame, 
+                text="Initialize Drive", 
+                command= createNewDatabase_click)
             button_initialize_drive.grid(row=3, column=0, columnspan=2, pady=5)
 
-            button_comparewithdatabase = tk.Button(root.panel_frame, text="Create comparison report", command=lambda: toolbox.create_comparison_report(get_text_field(text_input)))
+            button_comparewithdatabase = tk.Button(root.panel_frame, 
+                text="Create comparison report", command = compareWithDatabase_click)
             button_comparewithdatabase.grid(row=4, column=0, columnspan=2, pady=5)
         except Exception as e:
             tracer.log(f"Error 83103: {e}")
@@ -258,9 +310,14 @@ class BackupGUI:
 
                     # Resize the image to fit within the calculated dimensions
                     resized_image = original_image.subsample(
-                        max(original_image.width() // (image_width + 1), 1),
+                        max(original_image.width() // image_width, 1),
                         max(original_image.height() // (image_height + 1), 1)
                     )
+                    print((
+                        max(original_image.width() // image_width, 1),
+                        max(original_image.height() // (image_height + 1), 1)
+                    ))
+                    print()
                     root.images.append(resized_image)  # Keep a reference to avoid garbage collection
 
                     # Create a label for the image and place it in a grid
@@ -276,10 +333,3 @@ class BackupGUI:
     
     def mainloop(root):
         root.rootTK.mainloop()
-
-
-def get_text_field(text_field):
-    path = text_field.get()
-    if not os.path.isdir(path):
-        raise ValueError(f"Error 93182: Path '{path}' does not exist or is not a directory")
-    return path
