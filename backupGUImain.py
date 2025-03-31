@@ -123,7 +123,7 @@ class BackupGUI:
 
             # Add a label and text entry field
             label = tk.Label(popup, text="Enter Drive Path:")
-            label.pack(pady=10)
+            label.grid(row=0, column=0, columnspan=2, pady=10)
 
             text_field = tk.Entry(popup, width=50)
             text_field.pack(pady=10)
@@ -168,7 +168,7 @@ class BackupGUI:
 
             # Add a label to confirm the deletion
             label = tk.Label(confirm_popup, text=f"Are you sure you want to delete '{selected_drive}'?")
-            label.pack(pady=10)
+            label.grid(row=0, column=0, columnspan=2, pady=10)
 
             # Add a button to confirm the deletion
             def confirm_delete():
@@ -205,21 +205,21 @@ class BackupGUI:
 
             # Add a label to the panel_frame
             label = tk.Label(root.panel_frame, text="Creation of new and unique files", font=("Arial", 16))
-            label.pack(pady=10)
+            label.grid(row=0, column=0, columnspan=2, pady=10)
 
             # Add a label and text input field
             label_input = tk.Label(root.panel_frame, text="Location of new drive")
-            label_input.pack(pady=5)
+            label_input.grid(row=1, column=0, columnspan=2, pady=5)
 
             text_input = tk.Entry(root.panel_frame, width=50)
-            text_input.pack(pady=5)
+            text_input.grid(row=2, column=0, columnspan=2, pady=5)
 
             # Add buttons for unique menu actions
             button_initialize_drive = tk.Button(root.panel_frame, text="Initialize Drive", command=lambda: toolbox.initialize_drive(get_text_field(text_input)))
-            button_initialize_drive.pack(pady=5)
+            button_initialize_drive.grid(row=3, column=0, columnspan=2, pady=5)
 
             button_comparewithdatabase = tk.Button(root.panel_frame, text="Create comparison report", command=lambda: toolbox.create_comparison_report(get_text_field(text_input)))
-            button_comparewithdatabase.pack(pady=5)
+            button_comparewithdatabase.grid(row=4, column=0, columnspan=2, pady=5)
         except Exception as e:
             tracer.log(f"Error 83103: {e}")
     
@@ -237,21 +237,39 @@ class BackupGUI:
 
             # Add a label to the panel_frame
             label = tk.Label(root.panel_frame, text="Statistics Menu", font=("Arial", 16))
-            label.pack(pady=10)
+            label.grid(row=0, column=0, columnspan=2, pady=10)
 
             # Add four pictures to the panel_frame
-            images = []
+            root.images = []
             drive_info_folder_full_path = os.path.join(drive_path, drive_variables.drive_folder_info)
             image_names = [drive_variables.extension_distribution, drive_variables.file_size_histogram, drive_variables.file_repetition_count, drive_variables.file_creation_time_histogram]
-            for i in range(1, 5):
+
+            # Calculate the size of each image to fit within the panel_frame
+            panel_width = root.panel_frame.winfo_width()
+            panel_height = root.panel_frame.winfo_height()
+            num_images = len(image_names)
+            image_width = panel_width // 2 - 10  # Two images per row with padding
+            image_height = panel_height // 2 - 10  # Two rows with padding
+
+            for i, image_name in enumerate(image_names):
                 try:
-                    image_path = os.path.join(drive_info_folder_full_path, image_names[i - 1])
-                    image = tk.PhotoImage(file=image_path)
-                    images.append(image)  # Keep a reference to avoid garbage collection
-                    image_label = tk.Label(root.panel_frame, image=image)
-                    image_label.pack(pady=5)
+                    image_path = os.path.join(drive_info_folder_full_path, image_name)
+                    original_image = tk.PhotoImage(file=image_path)
+
+                    # Resize the image to fit within the calculated dimensions
+                    resized_image = original_image.subsample(
+                        max(original_image.width() // (image_width + 1), 1),
+                        max(original_image.height() // (image_height + 1), 1)
+                    )
+                    root.images.append(resized_image)  # Keep a reference to avoid garbage collection
+
+                    # Create a label for the image and place it in a grid
+                    image_label = tk.Label(root.panel_frame, image=resized_image)
+                    image_label.grid(row=(i // 2) + 1, column=i % 2, padx=5, pady=5)
                 except Exception as e:
-                    tracer.log(f"Error loading image {i}: {str(e)}")
+                    tracer.log(f"Error loading image {image_name}: {str(e)}")
+            drive_info_folder_full_path = os.path.join(drive_path, drive_variables.drive_folder_info)
+            image_names = [drive_variables.extension_distribution, drive_variables.file_size_histogram, drive_variables.file_repetition_count, drive_variables.file_creation_time_histogram]
         except Exception as e:
             tracer.log(f"Error 83103: {e}")
     #endregion
