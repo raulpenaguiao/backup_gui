@@ -287,48 +287,72 @@ class BackupGUI:
             for widget in root.panel_frame.winfo_children():
                 widget.destroy()
 
+            #Add a reference to the images
+            drive_info_folder_full_path = os.path.join(drive_path, drive_variables.drive_folder_info)
+            root.image_names = [drive_variables.extension_distribution, drive_variables.file_size_histogram, drive_variables.file_repetition_count, drive_variables.file_creation_time_histogram]
+            root.image_index = 0
+
+            def fill_image():
+                tracer.log("")
+                try:
+                    index = root.image_index
+                    tracer.log(f"Fill image {index}")
+                    # Clear the panel_frame
+                    for widget in root.panel_frame.winfo_children():
+                        if widget not in [root.panel_frame.winfo_children()[0],  # Label
+                                        root.panel_frame.winfo_children()[1],  # Left button
+                                        root.panel_frame.winfo_children()[2]]: # Right button
+                            widget.destroy()
+                    # Add an image to the panel_frame, make sure to strech to fit the panel
+                    image_path = os.path.join(drive_info_folder_full_path, root.image_names[index])
+                    from PIL import Image, ImageTk
+                    original_image = Image.open(image_path)
+                    image_width = root.panel_frame.winfo_width()
+                    image_height = root.panel_frame.winfo_height() - 50  # Leave some space for the buttons and label
+                    resized_image = ImageTk.PhotoImage(
+                        original_image.resize((image_width, image_height), Image.Resampling.LANCZOS)
+                    )
+                    root.images = resized_image  # Keep a reference to avoid garbage collection
+
+                    # Create a label for the image and place it in a grid
+                    image_label = tk.Label(root.panel_frame, image=resized_image)
+                    image_label.grid(row=1, column=0, columnspan=5, padx=5, pady=5)
+                except Exception as e:
+                    tracer.log(f"Error loading image {index}: {str(e)}")
+
+            def on_button_left_click():
+                tracer.log("")
+                try:
+                    root.image_index -= 1
+                    if root.image_index < 0:     
+                        root.image_index = len(root.image_names) - 1
+                    fill_image()
+                except Exception as e: 
+                    tracer.log(f"Error 83103: {e}")
+            
+            def on_button_right_click():
+                tracer.log("")
+                try:
+                    root.image_index += 1
+                    if root.image_index >= len(root.image_names):     
+                        root.image_index = 0
+                    fill_image()
+                except Exception as e: 
+                    tracer.log(f"Error 83104: {e}")
+
             # Add a label to the panel_frame
             label = tk.Label(root.panel_frame, text="Statistics Menu", font=("Arial", 16))
             label.grid(row=0, column=0, columnspan=2, pady=10)
 
-            # Add four pictures to the panel_frame
-            root.images = []
-            drive_info_folder_full_path = os.path.join(drive_path, drive_variables.drive_folder_info)
-            image_names = [drive_variables.extension_distribution, drive_variables.file_size_histogram, drive_variables.file_repetition_count, drive_variables.file_creation_time_histogram]
+            # Add left and right arrow buttons
+            button_left = tk.Button(root.panel_frame, text="←", command=on_button_left_click)
+            button_left.grid(row=0, column=2, pady=10, padx=5, sticky="e")
 
-            # Calculate the size of each image to fit within the panel_frame
-            panel_width = root.panel_frame.winfo_width()
-            panel_height = root.panel_frame.winfo_height()
-            num_images = len(image_names)
-            image_width = panel_width // 2 - 10  # Two images per row with padding
-            image_height = panel_height // 2 - 10  # Two rows with padding
-
-            for i, image_name in enumerate(image_names):
-                try:
-                    image_path = os.path.join(drive_info_folder_full_path, image_name)
-                    original_image = tk.PhotoImage(file=image_path)
-
-                    # Resize the image to fit within the calculated dimensions
-                    resized_image = original_image.subsample(
-                        max(original_image.width() // image_width, 1),
-                        max(original_image.height() // (image_height + 1), 1)
-                    )
-                    print((
-                        max(original_image.width() // image_width, 1),
-                        max(original_image.height() // (image_height + 1), 1)
-                    ))
-                    print()
-                    root.images.append(resized_image)  # Keep a reference to avoid garbage collection
-
-                    # Create a label for the image and place it in a grid
-                    image_label = tk.Label(root.panel_frame, image=resized_image)
-                    image_label.grid(row=(i // 2) + 1, column=i % 2, padx=5, pady=5)
-                except Exception as e:
-                    tracer.log(f"Error loading image {image_name}: {str(e)}")
-            drive_info_folder_full_path = os.path.join(drive_path, drive_variables.drive_folder_info)
-            image_names = [drive_variables.extension_distribution, drive_variables.file_size_histogram, drive_variables.file_repetition_count, drive_variables.file_creation_time_histogram]
+            button_right = tk.Button(root.panel_frame, text="→", command=on_button_right_click)
+            button_right.grid(row=0, column=3, pady=10, padx=5, sticky="w")
+            fill_image()
         except Exception as e:
-            tracer.log(f"Error 83103: {e}")
+            tracer.log(f"Error 83101: {e}")
     #endregion
     
     def mainloop(root):
