@@ -3,8 +3,6 @@ import drive_variables
 import tracer
 from pathlib import Path
 import shutil
-path = Path("/here/your/path/file.txt")
-print(path.parent.absolute())
 
 
 def create_unique_files(path_to_drive, list_of_paths):
