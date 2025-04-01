@@ -6,12 +6,14 @@ import inspect
 # Get the directory where the program is running
 current_dir = os.path.dirname(os.path.abspath(__file__))
 log_file_path = os.path.join(current_dir, "backup_gui.log")
-
+TRACE_LEVEL = 10
 
 def timestamp():
     return time.strftime("%y%m%d%H%M%S") + f"{int(time.time() * 1000) % 1000:03d}"
 
-def log(line):
+def log(line, trace_level=0):
+    if trace_level > TRACE_LEVEL:
+        return
     caller_name = inspect.currentframe().f_back.f_code.co_name#Get the name of the caller function
     if not os.path.exists(log_file_path):
         os.makedirs(os.path.dirname(log_file_path), exist_ok=True)

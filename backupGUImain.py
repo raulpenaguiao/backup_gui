@@ -7,8 +7,8 @@ import os
 import drive_variables
 import dbs
 from widgets.file_selection_popup import FileSelectionPopup
-
-
+import send2trash
+import file_manager
 
 
 def get_text_field(text_field):
@@ -25,6 +25,7 @@ class BackupGUI:
         root.rootTK.geometry("1050x600")
         root.InitializeComponents()
         root.InitializeDatabase()
+        root.InitializeButtons()
     
     #region Initialization functions
     def InitializeComponents(root):
@@ -103,6 +104,29 @@ class BackupGUI:
         root.dropdownDrives['values'] = [d['location'] for d in drive_variables.drives if os.path.exists(d['location'])]
         if len(root.dropdownDrives['values']) > 0:
             root.dropdownDrives.set(root.dropdownDrives['values'][0])
+    
+    def InitializeButtons(root):
+        try:
+            path = root.dropdownDrives.get()
+            full_path = os.path.join(path, drive_variables.drive_folder_info)
+            root.set_drive_buttons(os.path.exists(full_path))
+        except Exception as e:
+            tracer.log(f"Error 32101: {e}")
+    #endregion
+
+    #region design manipulation
+    def set_drive_buttons(root, state):
+        tracer.log("")
+        if state:
+            state = "active"
+        else:
+            state = "disabled"
+        try:
+            root.buttonDBCopies.config(state=state)
+            root.buttonCreateUniques.config(state=state)
+            root.buttonCreateStatistics.config(state=state)
+        except Exception as e:
+            tracer.log(f"Error 83102: {e}")
     #endregion
 
     #region Button click functions
@@ -111,16 +135,9 @@ class BackupGUI:
         try:
             path = root.dropdownDrives.get()
             tracer.log(f"The path was fetched at {path}")
-            toolbox.initialize_database(path)
-            tracer.log("Database is going to be initialized")
-            list_of_files = toolbox.list_files_in_folder(path)
-            tracer.log(f"list of files explored, there are {len(list_of_files)} files")
-            dic_of_checksum_files = toolbox.dic_of_checksums(list_of_files)
-            tracer.log(f"checksums computed, there are {len(dic_of_checksum_files)} checksums")
-            dic_of_files = {checksum: toolbox.split_different_files(files) for checksum, files in dic_of_checksum_files.items()}
-            tracer.log(f"files are now split into {sum([len(dic_of_files[checksum]) for checksum in dic_of_files])} distinct files")
-            json_path = os.path.join(path, drive_variables.drive_folder_info, drive_variables.fileinfo_json)
-            toolbox.save_dic_to_json(dic_of_files, json_path)
+            toolbox.create_database(path)
+            tracer.log(f"Database created at {path}")
+            root.set_drive_buttons(True)
         except Exception as e:
             tracer.log(f"An error occurred {e}")
 
@@ -137,7 +154,9 @@ class BackupGUI:
             label.grid(row=0, column=0, columnspan=2, pady=10)
 
             text_field = tk.Entry(popup, width=50)
-            text_field.pack(pady=10)
+            text_field.grid(row=1, column=0, columnspan=2, pady=10)
+            #print(f"Label grid info: {label.grid_info()}")
+            #print(f"Text field grid info: {text_field.grid_info()}")
 
             # Add a button to confirm the drive addition
             def confirm_add_drive():
@@ -153,13 +172,13 @@ class BackupGUI:
                 popup.destroy()
 
             button_confirm = tk.Button(popup, text="Add", command=confirm_add_drive)
-            button_confirm.pack(pady=10)
+            button_confirm.grid(row=2, column=0, columnspan=2, pady=10)
 
-            # Add a cancel button to close the popup
+            # Add a cancel button to close the popup  
             button_cancel = tk.Button(popup, text="Cancel", command=popup.destroy)
-            button_cancel.pack(pady=10)
+            button_cancel.grid(row=3, column=0, columnspan=2, pady=10)
         except Exception as e:
-            tracer.log(f"Error 56425: {e}")
+            tracer.log(f"Error 16425: {e}")
     
     def buttonRemoveDrive_click(root):
         tracer.log("")
@@ -175,7 +194,7 @@ class BackupGUI:
             # Create a confirmation popup
             confirm_popup = tk.Toplevel(root.rootTK)
             confirm_popup.title("Confirm Deletion")
-            confirm_popup.geometry("300x150")
+            confirm_popup.geometry("400x250")
 
             # Add a label to confirm the deletion
             label = tk.Label(confirm_popup, text=f"Are you sure you want to delete '{selected_drive}'?")
@@ -193,44 +212,75 @@ class BackupGUI:
                 confirm_popup.destroy()
 
             button_confirm = tk.Button(confirm_popup, text="Delete", command=confirm_delete)
-            button_confirm.pack(pady=10)
+            button_confirm.grid(row=2, column=0, columnspan=2, pady=10)
 
             # Add a cancel button to close the popup
             button_cancel = tk.Button(confirm_popup, text="Cancel", command=confirm_popup.destroy)
-            button_cancel.pack(pady=10)
+            button_cancel.grid(row=3, column=0, columnspan=2, pady=10)
+            #print(f"Button ancel info: {button_cancel.grid_info()}")
+            #print(f"Button confirm info: {button_confirm.grid_info()}")
+
         except Exception as e:
-            tracer.log(f"Error 56425: {e}")
+            tracer.log(f"Error 26425: {e}")
     
     def buttonDBCopies_click(root):
         tracer.log("")
         try:
-            repeated_files = toolbox.create_copies_report(get_text_field(root.dropdownDrives))
+            root.repeated_files = toolbox.create_copies_report(get_text_field(root.dropdownDrives))
+            root.number_of_repetitions = len(root.repeated_files)
+
+            #Create report
             tracer.clear_log(drive_variables.copies_report_txt)
-            number_of_repetitions = len(repeated_files)
-            for index, repetition in enumerate(repeated_files):
+            for _, repetition in enumerate(root.repeated_files):
                 message = "Files in these locations are the same:\n"
                 for file in repetition:
                     message += (" "*4) + file['file_path'] + "\n"
                 tracer.log_to_report(message, drive_variables.copies_report_txt)
-                tracer.log("Message written on the report.")
-                result = None
-                popup = FileSelectionPopup(root.rootTK, repetition, index, number_of_repetitions, result)
-                
-                root.rootTK.wait_window(popup)
-                if result[0] == "keep this":
-                    for file in repetition:
-                        if file['file_path'] == result[1]:
-                            tracer.log(f"Deleting file: {file['file_path']}")
-                            break
-                elif result[0] == "keep all":
-                    tracer.log("Keeping all files in this repetition.")
-                elif result[0] == "leave":
-                    tracer.log("Leaving selection menu without changes.")
-                    break
-                else:
-                    raise ValueError(f"Error 93182: Invalid result from file selection popup: {result}")
             tracer.log("Report created")
 
+            #Create popups
+            def process_files():
+                tracer.log("")
+                try:
+                    result = root.fileSelectionPopup.result
+                    if result == None:
+                        raise ValueError(f"Error 93183: Invalid result from file selection popup")
+                    elif result[0] == "keep this":
+                        for file in root.repetition:
+                            if not file['file_path'] == root.fileSelectionPopup.result[1]:
+                                tracer.log(f"Deleting file in {file['file_path']}")
+                                send2trash.send2trash(file['file_path'])
+                                break
+                        return False
+                    elif result[0] == "keep all":
+                        tracer.log("Keeping all files in this repetition.")
+                        return False
+                    elif result[0] == "leave":
+                        tracer.log("Leaving selection menu without changes.")
+                        return True
+                    else:
+                        raise ValueError(f"Error 93182: Invalid result from file selection popup: {result}")
+                except Exception as e:
+                    tracer.log(f"Error 93192: {e}")
+
+            def on_popup_close():
+                tracer.log("")
+                try:
+                    leaveQ = process_files()
+                    if leaveQ or root.index == root.number_of_repetitions - 1:
+                        return
+                    root.index += 1
+                    root.repetition = root.repeated_files[root.index]
+                    root.fileSelectionPopup = FileSelectionPopup(root.rootTK, root.repetition, root.index, root.number_of_repetitions, on_close = on_popup_close)
+                except Exception as e:
+                    tracer.log(f"Error 56325: {e}")
+
+            if root.number_of_repetitions > 0:
+                tracer.log(f"Number of repetitions: {root.number_of_repetitions}")
+                root.index = 0
+                root.repetition = root.repeated_files[root.index]
+                root.fileSelectionPopup = FileSelectionPopup(root.rootTK, root.repetition, root.index, root.number_of_repetitions, on_close = on_popup_close)
+                tracer.log(f"Popup created")
 
         except Exception as e:
             tracer.log(f"Error 56425: {e}")
@@ -253,14 +303,17 @@ class BackupGUI:
             text_input = tk.Entry(root.panel_frame, width=50)
             text_input.grid(row=2, column=1, columnspan=2, pady=5)
 
-            def compareWithDatabase_click(root):
+            def compareWithDatabase_click():
                 tracer.log("")
-                toolbox.create_comparison_report( get_text_field(text_input), root.dropdownDrives.get())
+                backup_drive_path = get_text_field(root.dropdownDrives)
+                additional_drive_path = get_text_field(text_input)
+                comparison = toolbox.create_comparison_report(backup_drive_path, additional_drive_path)
+                files_to_copy = [file['file_path'] for file in comparison]
+                file_manager.create_unique_files(additional_drive_path, files_to_copy)
 
-
-            def createNewDatabase_click(root):
+            def createNewDatabase_click():
                 tracer.log("")
-                toolbox.create_comparison_report( get_text_field(text_input), text_input.get())
+                toolbox.create_database(get_text_field(text_input))
 
 
             # Add buttons for unique menu actions

@@ -188,26 +188,42 @@ def initialize_database(path_to_dir):
     os.mkdir(drive_path)
     return
 
-def create_comparison_report(files_1, files_2):
+def create_comparison_report(path_to_dir_1, path_to_dir_2):
     """
     Compares two lists of files and generates a report of the differences.
     Args:
-        files_1 (list): The first list of file dictionaries to compare.
-        files_2 (list): The second list of file dictionaries to compare.
+        files_1 (list): The path to the first directory file to compare.
+        files_2 (list): The path to the second directory file to compare.
     Returns:
-        list: A list of dictionaries containing the differences between the two lists of files.
+        list: A list of files containing the differences between the two lists of files.
     """
-    comparison = {}
-    for checksum in files_1:
-        if checksum not in files_2:
-            comparison[checksum] = files_1[checksum]
+
+    drive_info_folder_full_path_1 = os.path.join(path_to_dir_1, drive_variables.drive_folder_info)
+    drive_info_json_full_path_1 = os.path.join(drive_info_folder_full_path_1, drive_variables.fileinfo_json)
+    tracer.log("drive 1 info full path " + drive_info_json_full_path_1)
+
+    # Read the JSON file containing file metadata
+    with open(drive_info_json_full_path_1, 'r') as f:
+        files_1 = json.load(f)
+        
+    drive_info_folder_full_path_2 = os.path.join(path_to_dir_2, drive_variables.drive_folder_info)
+    drive_info_json_full_path_2 = os.path.join(drive_info_folder_full_path_2, drive_variables.fileinfo_json)
+    tracer.log("drive 2 info full path " + drive_info_json_full_path_2)
+
+    # Read the JSON file containing file metadata
+    with open(drive_info_json_full_path_2, 'r') as f:
+        files_2 = json.load(f)
+    
+    comparison = []
+    for checksum in files_2:
+        if checksum not in files_1:
+            print("checksum not in files_1, adding", files_2[checksum])
+            comparison += [file[0] for file in files_2[checksum]]
         else:
-            for file in files_1[checksum]:
-                if file not in files_2[checksum]:
-                    if checksum not in comparison:
-                        comparison[checksum] = []
-                    comparison[checksum].append(file)
-    print("comparison", comparison)
+            for file in files_2[checksum]:
+                if file not in files_1[checksum]:
+                    comparison.append(file[0])#We only take the first file of the list, because they are identical
+    print("comparison: list of files that only exist in the second drive:", comparison)
     return comparison
 
 def dic_of_checksums(list_of_files):
@@ -217,7 +233,6 @@ def dic_of_checksums(list_of_files):
     return dic
 
 def create_copies_report(path_to_drive):
-
     drive_info_folder_full_path = os.path.join(path_to_drive, drive_variables.drive_folder_info)
     drive_info_json_full_path = os.path.join(drive_info_folder_full_path, drive_variables.fileinfo_json)
     # Read the JSON file containing file metadata
@@ -231,6 +246,17 @@ def create_copies_report(path_to_drive):
                 repeated_files.append(file_list)
     return repeated_files
                 
+def create_database(path):
+    initialize_database(path)
+    tracer.log("Database is going to be initialized")
+    list_of_files = list_files_in_folder(path)
+    tracer.log(f"list of files explored, there are {len(list_of_files)} files")
+    dic_of_checksum_files = dic_of_checksums(list_of_files)
+    tracer.log(f"checksums computed, there are {len(dic_of_checksum_files)} checksums")
+    dic_of_files = {checksum: split_different_files(files) for checksum, files in dic_of_checksum_files.items()}
+    tracer.log(f"files are now split into {sum([len(dic_of_files[checksum]) for checksum in dic_of_files])} distinct files")
+    json_path = os.path.join(path, drive_variables.drive_folder_info, drive_variables.fileinfo_json)
+    save_dic_to_json(dic_of_files, json_path)
 
 
 
