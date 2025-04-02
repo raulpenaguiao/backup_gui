@@ -126,6 +126,22 @@ def create_statistics_pictures(drive_path):
     plt.close()
     tracer.log("creatin time histogram created, saved in " + str(os.path.join(drive_info_folder_full_path, drive_variables.file_creation_time_histogram)))
 
+def compute_checksum(file_data, size):
+    if size < 1_000:
+        # For small files (about 1 kB), use MD5 checksum
+        return hashlib.md5(file_data).hexdigest()
+    elif size < 1_000_000:
+        # For medium files (about 1 MB), use SHA-1 checksum
+        return hashlib.sha1(file_data).hexdigest()
+    # For large files, use SHA-256 on a sample of the file
+    # Read the first 1 MB and the last 1MB of the file for checksum calculation
+    sample_size = 1000_000  # 100 kB
+    start_sample = file_data[:sample_size]
+    end_sample = file_data[-sample_size:]
+    # Combine the two samples for checksum calculation
+    combined_sample = start_sample + end_sample
+    return hashlib.sha256(combined_sample).hexdigest()
+
 def list_files_in_folder(folder_path, verbose=False):
     """
     Lists all files in the given folder and its subfolders, along with their metadata.
@@ -152,8 +168,8 @@ def list_files_in_folder(folder_path, verbose=False):
                 file_path = os.path.join(root, file)
                 with open(file_path, 'rb') as f:
                     file_data = f.read()
-                    checksum = hashlib.md5(file_data).hexdigest()
                     size = os.path.getsize(file_path)
+                    checksum = compute_checksum(file_data, size)
                     extention = os.path.splitext(file_path)[1].lower()
                     datem = os.path.getmtime(file_path)
                     datec = os.path.getctime(file_path)

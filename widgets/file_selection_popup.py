@@ -5,7 +5,7 @@ from tkinter import ttk
 
 class FileSelectionPopup:
 
-    def __init__(self, root, repetition, trial, number_of_repetitions, on_close=None):
+    def __init__(self, root, repetition, trial, number_of_repetitions, on_close=None, drive_full_path = ""):
         tracer.log(f"FileSelectionPopup created", trace_level = 3)
         tracer.log(f"root: {root}", trace_level = 3)
         tracer.log(f"repetition: {repetition}", trace_level = 3)
@@ -28,12 +28,13 @@ class FileSelectionPopup:
         label = tk.Label(self.popup, text=label_text)
         label.pack(pady=10)
 
-        dropdown = ttk.Combobox(self.popup, values=[file['file_path'] for file in repetition], width=150)
+        len_drive_full_path = len(drive_full_path)
+        dropdown = ttk.Combobox(self.popup, values=[file['file_path'][len_drive_full_path:] for file in repetition], width=150)
         dropdown.pack(pady=10)
-        dropdown.set(repetition[0]['file_path'])  # Set default selection
+        dropdown.set(repetition[0]['file_path'][len_drive_full_path:])  # Set default selection
 
         def keep_this():
-            selected_file = dropdown.get()
+            selected_file = len_drive_full_path + dropdown.get()
             tracer.log(f"Keeping file: {selected_file}")
             self.result = tuple(["keep this", selected_file])
             if not on_close == None:

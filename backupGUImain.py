@@ -271,7 +271,14 @@ class BackupGUI:
                         return
                     root.index += 1
                     root.repetition = root.repeated_files[root.index]
-                    root.fileSelectionPopup = FileSelectionPopup(root.rootTK, root.repetition, root.index, root.number_of_repetitions, on_close = on_popup_close)
+                    root.fileSelectionPopup = FileSelectionPopup(
+                        root.rootTK, 
+                        root.repetition, 
+                        root.index, 
+                        root.number_of_repetitions, 
+                        on_close = on_popup_close,
+                        drive_full_path = get_text_field(root.dropdownDrives)
+                    )
                 except Exception as e:
                     tracer.log(f"Error 56325: {e}")
 
@@ -279,7 +286,14 @@ class BackupGUI:
                 tracer.log(f"Number of repetitions: {root.number_of_repetitions}")
                 root.index = 0
                 root.repetition = root.repeated_files[root.index]
-                root.fileSelectionPopup = FileSelectionPopup(root.rootTK, root.repetition, root.index, root.number_of_repetitions, on_close = on_popup_close)
+                root.fileSelectionPopup = FileSelectionPopup(
+                    root.rootTK, 
+                    root.repetition, 
+                    root.index, 
+                    root.number_of_repetitions, 
+                    on_close = on_popup_close,
+                    drive_full_path = get_text_field(root.dropdownDrives)
+                )
                 tracer.log(f"Popup created")
 
         except Exception as e:
