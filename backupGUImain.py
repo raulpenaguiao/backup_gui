@@ -227,6 +227,8 @@ class BackupGUI:
         tracer.log("")
         try:
             root.repeated_files = toolbox.create_copies_report(get_text_field(root.dropdownDrives))
+            print(f"Repeated files: {root.repeated_files}")
+            root.repeated_files = [file for file in root.repeated_files if not file[0]['leave_copies']]
             root.number_of_repetitions = len(root.repeated_files)
 
             #Create report
@@ -243,6 +245,7 @@ class BackupGUI:
                 tracer.log("")
                 try:
                     result = root.fileSelectionPopup.result
+                    tracer.log(f"Result from file selection popup: {result}")
                     if result == None:
                         raise ValueError(f"Error 93183: Invalid result from file selection popup")
                     elif result[0] == "keep this":
@@ -250,12 +253,18 @@ class BackupGUI:
                             if not file['file_path'] == root.fileSelectionPopup.result[1]:
                                 tracer.log(f"Deleting file in {file['file_path']}")
                                 send2trash.send2trash(file['file_path'])
-                                break
                         return False
                     elif result[0] == "keep all":
                         tracer.log("Keeping all files in this repetition.")
+                    elif result[0] == "delete all":
+                        tracer.log("Deleting all files in this repetition.")
+                        for file in root.repetition:
+                            tracer.log(f"Deleting file in {file['file_path']}")
+                            send2trash.send2trash(file['file_path'])
                         return False
                     elif result[0] == "leave":
+                        for file in root.repetition:
+                            file['leave_copies'] = True
                         tracer.log("Leaving selection menu without changes.")
                         return True
                     else:

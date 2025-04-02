@@ -182,7 +182,8 @@ def list_files_in_folder(folder_path, verbose=False):
                         'extention': extention,
                         'date-changed': datec,
                         'date-created': datem,
-                        'date-accessed': datea
+                        'date-accessed': datea,
+                        'leave_copies': False
                     })
                     count += 1
                     datec_formatted = time.strftime('%Y-%m-%d', time.localtime(datem))
