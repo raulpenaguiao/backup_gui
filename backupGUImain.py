@@ -227,7 +227,6 @@ class BackupGUI:
         tracer.log("")
         try:
             root.repeated_files = toolbox.create_copies_report(get_text_field(root.dropdownDrives))
-            print(f"Repeated files: {root.repeated_files}")
             root.repeated_files = [file for file in root.repeated_files if not file[0]['leave_copies']]
             root.number_of_repetitions = len(root.repeated_files)
 

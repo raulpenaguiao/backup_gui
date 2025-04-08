@@ -28,12 +28,17 @@ Analysing extentions can reveal which files are not worth keeping, identifying i
 ## Recovery
 With some quick configurations and one click, recover all the files that you want in your device from your backup.
 
+## Trash
+
+On creation the drive create a trash folder that will contain a copy of all the files that go through the database. A copy will be created in order to have a recollection of the files that have been seen.
+
 # Good backup practices
 
 - Make sure you have file backups in at least two locations
 - Make sure to have at least one backup online and another offline
 - Backup regularly
 - Test your recovery regularly
+- Trash functionality
 
 # Issues and future features
 

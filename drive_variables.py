@@ -10,3 +10,4 @@ file_creation_time_histogram = 'file_creation_time_histogram.png'
 
 
 unique_files_folder_name = ".unique_files"
+trash_folder = ".drive_trash"

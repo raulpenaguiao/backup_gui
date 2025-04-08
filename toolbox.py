@@ -203,6 +203,9 @@ def initialize_database(path_to_dir):
     if os.path.exists(drive_path):
         shutil.rmtree(drive_path)
     os.mkdir(drive_path)
+    trash_full_path = os.path.join(drive_path, drive_variables.trash_folder)
+    if not os.path.exists(trash_full_path):
+        os.makedirs(trash_full_path)
     return
 
 def create_comparison_report(path_to_dir_1, path_to_dir_2):
