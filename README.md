@@ -73,12 +73,40 @@ When creating the backup drive, a trash folder is automatically generated. This 
 - **Trash Management**: Use the trash functionality to keep track of deleted or processed files.
 
 ---
+## How It Works
+The Backup GUI uses a combination of checksum verification and file content analysis to efficiently ensure that only unique files are stored in the cold storage. The application maintains a database of all files, including their paths, sizes, and checksums, to prevent duplication and ensure data integrity.
+
+---
+
+## Use Cases
+1. **Personal Backup**: Safeguard your personal documents, photos, and videos by creating a reliable backup system.
+2. **Business Backup**: Manage and organize critical business files with ease, ensuring compliance with data retention policies.
+3. **File Organization**: Use the extension analysis and file depth analysis features to declutter and optimize your storage.
+
+---
+
+## Troubleshooting
+If you encounter issues while using the Backup GUI, consider the following steps:
+- **Dependencies**: Ensure all dependencies are installed correctly using `pip install -r requirements.txt`.
+- **Permissions**: Verify that you have the necessary permissions to access the source and destination directories.
+- **Logs**: Check the application logs for detailed error messages and troubleshooting tips.
+- **Reach**: Contact the developer team for personalized troubleshooting.
+
+---
 
 ## Issues and Future Features
 
 ### Current Issues
+- Default behaviour when files are in the "trash" folder
+- Comparison of empty files is silly
+- Better logging system for errors and warnings
+- Loading bar for the indexing process
 - File depth analysis not yet implemented.
 - Recovery of files according to predefined configurations is not implemented.
+- Folder management: the program currently does not compare folders, only files.
+- Create an installer for Windows, Linux, and MacOS.
+- Save preferences when clicking "Keep all" in the copy analyser
+- Ignore .git folders
 
 ### Planned Features
 - **Unique File Copying**: Ensure that only unique files are copied to the backup.
@@ -88,24 +116,8 @@ When creating the backup drive, a trash folder is automatically generated. This 
 
 ---
 
-## Additional Chapters
 
-### How It Works
-The Backup GUI uses a combination of checksum verification and file content analysis to efficiently ensure that only unique files are stored in the cold storage. The application maintains a database of all files, including their paths, sizes, and checksums, to prevent duplication and ensure data integrity.
-
-### Use Cases
-1. **Personal Backup**: Safeguard your personal documents, photos, and videos by creating a reliable backup system.
-2. **Business Backup**: Manage and organize critical business files with ease, ensuring compliance with data retention policies.
-3. **File Organization**: Use the extension analysis and file depth analysis features to declutter and optimize your storage.
-
-### Troubleshooting
-If you encounter issues while using the Backup GUI, consider the following steps:
-- **Dependencies**: Ensure all dependencies are installed correctly using `pip install -r requirements.txt`.
-- **Permissions**: Verify that you have the necessary permissions to access the source and destination directories.
-- **Logs**: Check the application logs for detailed error messages and troubleshooting tips.
-- **Reach**: Contact the developer team for personalized troubleshooting.
-
-### Contributing
+## Contributing
 We welcome contributions to improve the Backup GUI. To contribute:
 1. Fork the repository.
 2. Create a new branch for your feature or bug fix.
@@ -120,3 +132,10 @@ This project is licensed under the MIT License. See the `LICENSE` file for more 
 
 ## Contact
 For questions, suggestions, or support, please contact the project maintainer at [thecode_enthusiast@proton.me].
+
+--
+
+## Aknowledgments
+- [Python](https://www.python.org/) - The programming language used for this project.
+- [Tkinter](https://docs.python.org/3/library/tkinter.html) - The GUI toolkit used for building the application interface.
+- [Pandas](https://pandas.pydata.org/) - The data analysis library used for managing file statistics and database operations.
