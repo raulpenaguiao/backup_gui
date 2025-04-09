@@ -200,7 +200,7 @@ class FileSelectionPopup:
             extension = file_path.split(".")[-1]
             tracer.log(f"File extension: {extension}")
             #see if file is an image file
-            isImage = extension in ["jpg", "jpeg", "png", "gif"]
+            isImage = extension.lower() in ["jpg", "jpeg", "png", "gif"]
             if isImage:
                 # Add an image to the side panel (example with a placeholder image)
                 image = tk.PhotoImage(file=file_path)  # Replace with actual image path

@@ -3,6 +3,7 @@ import json
 from tools_library.drive_variables import drives_file, config_folder
 
 PROGRAM_DIR = os.getcwd()
+print("Program Directory:", PROGRAM_DIR)
 CONFIGFOLDER_PATH = os.path.join(PROGRAM_DIR, config_folder)
 DRIVESPATH_FILE = os.path.join(CONFIGFOLDER_PATH, drives_file)
 config_data = {}

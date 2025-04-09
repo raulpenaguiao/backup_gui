@@ -9,6 +9,8 @@ import hashlib
 import shutil
 import tools_library.tracer as tracer
 import tools_library.drive_variables as drive_variables
+from tools_library.progress_tracker import ProgressTracker
+
 
 def save_dic_to_json(dic, json_path):
     """
@@ -142,7 +144,7 @@ def compute_checksum(file_data, size):
     combined_sample = start_sample + end_sample
     return hashlib.sha256(combined_sample).hexdigest()
 
-def list_files_in_folder(folder_path, verbose=False):
+def list_files_in_folder(folder_path, verbose=False, progress_tracker=ProgressTracker()):
     """
     Lists all files in the given folder and its subfolders, along with their metadata.
     Args:
@@ -162,7 +164,15 @@ def list_files_in_folder(folder_path, verbose=False):
     """
     count = 0
     list_of_files = []
+
+
     try:
+        count_files = 0
+        for root, _, files in os.walk(folder_path):
+            count_files += len(files)
+        progress_tracker.start_progress_tracker(count_files)
+
+        count_files = 0
         for root, _, files in os.walk(folder_path):
             for file in files:
                 file_path = os.path.join(root, file)
@@ -189,6 +199,8 @@ def list_files_in_folder(folder_path, verbose=False):
                     datec_formatted = time.strftime('%Y-%m-%d', time.localtime(datem))
                     if(verbose):
                         tracer.log("count:", count, 'and size', size, 'and date of last change', datec_formatted)
+            count_files += len(files)
+            progress_tracker.set_current_value(count_files)
     except Exception as e:
         tracer.log(f"An error occurred: {e}")
     return list_of_files
@@ -266,10 +278,10 @@ def create_copies_report(path_to_drive):
                 repeated_files.append(file_list)
     return repeated_files
                 
-def create_database(path):
+def create_database(path, progress_tracker=ProgressTracker()):
     initialize_database(path)
     tracer.log("Database is going to be initialized")
-    list_of_files = list_files_in_folder(path)
+    list_of_files = list_files_in_folder(path, progress_tracker=progress_tracker)
     tracer.log(f"list of files explored, there are {len(list_of_files)} files")
     dic_of_checksum_files = dic_of_checksums(list_of_files)
     tracer.log(f"checksums computed, there are {len(dic_of_checksum_files)} checksums")

@@ -48,6 +48,7 @@ python3 backup_gui
 
 ### 1. Create and Update a New Database Backup
 Link your backup to the program. By providing the path to this GUI to start backing up your files to your ``cold storage``, all files will be indexed. This automatically creates file statistics and lookup table data in the cold storage, ensuring that your files are well-organized and easy to manage.
+This process is enriched with a loading bar.
 
 ### 2. Copy New Files
 Select a ``hot storage`` with new files that you want to add to your backup and copy all new files from this location to the ``cold storage``.
@@ -100,7 +101,6 @@ If you encounter issues while using the Backup GUI, consider the following steps
 - Default behaviour when files are in the "trash" folder
 - Comparison of empty files is silly
 - Better logging system for errors and warnings
-- Loading bar for the indexing process
 - File depth analysis not yet implemented.
 - Recovery of files according to predefined configurations is not implemented.
 - Folder management: the program currently does not compare folders, only files.

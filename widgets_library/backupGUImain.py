@@ -9,6 +9,8 @@ import tools_library.dbs as dbs
 from widgets_library.file_selection_popup import FileSelectionPopup
 import send2trash
 import tools_library.file_manager as file_manager
+from widgets_library.loading_popup import LoadingPopup
+from tools_library.progress_tracker import ProgressTracker
 
 
 def get_text_field(text_field):
@@ -133,13 +135,27 @@ class BackupGUI:
     def buttonCreateDatabase_click(root):
         tracer.log("")
         try:
+            root.rootTK.config(cursor="wait")
+            # Create and show loading popup
+            progress_tracker = ProgressTracker(name="File Listing", unit="files")
+            tracer.log(progress_tracker.name)
+            tracer.log(progress_tracker.unit)
+            tracer.log(progress_tracker.loaded)
+            loading_popup = LoadingPopup(root.rootTK, progress_tracker)
+            tracer.log("")
+            root.rootTK.update()
+
+            tracer.log("")
             path = root.dropdownDrives.get()
             tracer.log(f"The path was fetched at {path}")
-            toolbox.create_database(path)
+            toolbox.create_database(path, progress_tracker)
             tracer.log(f"Database created at {path}")
             root.set_drive_buttons(True)
         except Exception as e:
             tracer.log(f"An error occurred {e}")
+        finally:
+            loading_popup.popup.destroy()
+            root.rootTK.config(cursor="")
 
     def buttonAddDriveLocation_click(root):
         tracer.log("")

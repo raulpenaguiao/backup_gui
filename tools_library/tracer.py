@@ -2,11 +2,11 @@ import time
 import os
 import inspect
 from tools_library.drive_variables import log_folder, log_tracer
-
+from tools_library.dbs import PROGRAM_DIR
 
 # Get the directory where the program is running
-current_dir = os.getcwd()
-log_file_path = os.path.join(current_dir, log_folder, log_tracer)
+log_folder_path = os.path.join(PROGRAM_DIR, log_folder)
+log_file_path = os.path.join(log_folder_path, log_tracer)
 TRACE_LEVEL = 10
 
 def timestamp():
@@ -24,12 +24,12 @@ def log(line, trace_level=0):
         file.write(f"{timestamp()} {caller_name} {line} \n")
 
 def clear_log(filename):
-    log_file_path = os.path.join(current_dir, filename)
-    if os.path.exists(log_file_path):
-        os.remove(log_file_path)
+    filename_fullpath = os.path.join(log_folder_path, filename)
+    if os.path.exists(filename_fullpath):
+        os.remove(filename_fullpath)
 
 def log_to_report(line, filename):
-    log_file_path = os.path.join(current_dir, filename)
+    log_file_path = os.path.join(log_folder_path, filename)
     if not os.path.exists(log_file_path):
         os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
         with open(log_file_path, 'w') as file:
