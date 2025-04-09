@@ -7,8 +7,8 @@ import filecmp
 import time
 import hashlib
 import shutil
-import tracer
-import drive_variables
+import tools_library.tracer as tracer
+import tools_library.drive_variables as drive_variables
 
 def save_dic_to_json(dic, json_path):
     """

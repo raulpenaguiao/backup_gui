@@ -1,14 +1,14 @@
 import tkinter as tk
 from tkinter import ttk
 from tkinter import Menu
-import toolbox
-import tracer
+import tools_library.toolbox as toolbox
+import tools_library.tracer as tracer
 import os
-import drive_variables
-import dbs
-from widgets.file_selection_popup import FileSelectionPopup
+import tools_library.drive_variables as drive_variables
+import tools_library.dbs as dbs
+from widgets_library.file_selection_popup import FileSelectionPopup
 import send2trash
-import file_manager
+import tools_library.file_manager as file_manager
 
 
 def get_text_field(text_field):

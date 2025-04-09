@@ -14,7 +14,7 @@ Start organizing your backups with unique classification of documents by cloning
 
 ### Download installer and run binary
 
-1. Go to [Releases](https://github.com/raulpenaguiao/backup_gui/releases) page and select the version that you want to download
+1. Go to [Releases](https://github.com/raulpenaguiao/backup_gui/tree/main/releases) page and select the version that you want to download
 2. Download the latest release for your operating system:
     - `backup_gui_windows.exe` for Windows
     - `backup_gui_linux` for Linux

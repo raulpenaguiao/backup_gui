@@ -1,6 +1,6 @@
-from backupGUImain import BackupGUI
-from dbs import initialize_drives, initialize_configurations, get_saved_drives
-import drive_variables
+from widgets_library.backupGUImain import BackupGUI
+from tools_library.dbs import initialize_drives, initialize_drives, get_saved_drives
+import tools_library.drive_variables as drive_variables
 
 def create_gui():
     drive_variables.drives = get_saved_drives()

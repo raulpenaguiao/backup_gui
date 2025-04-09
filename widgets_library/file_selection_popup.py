@@ -1,5 +1,5 @@
 import tkinter as tk
-import tracer
+import tools_library.tracer as tracer
 from tkinter import ttk
 
 

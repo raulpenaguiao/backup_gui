@@ -1,11 +1,12 @@
 import time
 import os
 import inspect
+from tools_library.drive_variables import log_folder, log_tracer
 
 
 # Get the directory where the program is running
-current_dir = os.path.dirname(os.path.abspath(__file__))
-log_file_path = os.path.join(current_dir, "backup_gui.log")
+current_dir = os.getcwd()
+log_file_path = os.path.join(current_dir, log_folder, log_tracer)
 TRACE_LEVEL = 10
 
 def timestamp():
