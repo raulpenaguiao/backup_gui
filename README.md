@@ -126,7 +126,7 @@ We welcome contributions to improve the Backup GUI. To contribute:
 ---
 
 ## License
-This project is licensed under the MIT License. See the `LICENSE` file for more details.
+This project is licensed under the Apache License. See the `LICENSE` file for more details.
 
 ---
 
