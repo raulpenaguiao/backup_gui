@@ -181,3 +181,12 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+
+
+# test folders for the executables
+releases/*/.drive_info
+releases/*/config
+releases/*/log
+releases/*/.drive_info/fileinfo.json
+

@@ -16,12 +16,13 @@ def log(line, trace_level=0):
     if trace_level > TRACE_LEVEL:
         return
     caller_name = inspect.currentframe().f_back.f_code.co_name#Get the name of the caller function
+    caller_file = inspect.currentframe().f_back.f_code.co_filename
     if not os.path.exists(log_file_path):
         os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
         with open(log_file_path, 'w') as file:
             file.write('')
     with open(log_file_path, 'a') as file:
-        file.write(f"{timestamp()} {caller_name} {line} \n")
+        file.write(f"{timestamp()} {caller_file}>{caller_name} {line} \n")
 
 def clear_log(filename):
     filename_fullpath = os.path.join(log_folder_path, filename)

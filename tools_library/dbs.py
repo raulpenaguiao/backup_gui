@@ -22,9 +22,13 @@ def get_saved_drives():
         return []
 
 def initialize_drives():
-    if not os.path.exists(DRIVESPATH_FILE):
-        with open(DRIVESPATH_FILE, 'w') as f:
-            json.dump([], f, indent=1)
+    try:
+        os.makedirs(os.path.dirname(DRIVESPATH_FILE), exist_ok=True)
+        if not os.path.exists(DRIVESPATH_FILE):
+            with open(DRIVESPATH_FILE, 'w') as f:
+                json.dump([], f, indent=1)
+    except (IOError, PermissionError) as e:
+        raise Exception(f"Failed to initialize drives file: {e}.")
 
 
 def update_drives_list(drives):
