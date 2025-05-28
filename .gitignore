@@ -190,3 +190,4 @@ releases/*/config
 releases/*/log
 releases/*/.drive_info/fileinfo.json
 
+releases/0.0.0/windows/.drive_info/fileinfo.json
