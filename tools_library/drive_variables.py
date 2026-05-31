@@ -20,3 +20,8 @@ copies_report_txt = "copies_report.txt"
 #Config parameters
 config_folder = "config"
 drives_file = "drives.json"
+
+# New vault system
+pigmy_hash_file = ".pigmy-hash"
+vaults = []
+vaults_file = "vaults.json"

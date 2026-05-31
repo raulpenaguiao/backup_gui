@@ -1,6 +1,8 @@
+import os
 import tkinter as tk
 import tools_library.tracer as tracer
 from tkinter import ttk
+from PIL import Image, ImageTk
 
 
 class FileSelectionPopup:
@@ -38,14 +40,15 @@ class FileSelectionPopup:
         main_container = ttk.Frame(self.popup)
         main_container.pack(expand=True, fill='both', pady=10)
 
-        # Create frame for side panel
-        side_panel = ttk.Frame(main_container, width=200)
-        side_panel.pack(side='left', fill='y', padx=5)
-
         # Create a frame to hold the Treeview and scrollbars
         frame = ttk.Frame(main_container)
         frame.pack(side='left', expand=True, fill='both')
         frame.pack(pady=10)
+
+        # Create frame for side panel (right side)
+        side_panel = ttk.Frame(main_container, width=220)
+        side_panel.pack(side='right', fill='y', padx=5)
+        side_panel.pack_propagate(False)
         tracer.log(f"Create a frame to hold the Treeview and scrollbars")
 
         # Create scrollbars
@@ -85,7 +88,14 @@ class FileSelectionPopup:
         scrollbar.grid(row=1, column=0, sticky='ew')
         tracer.log(f"Configure frame grid")
 
-        FileSelectionPopup.populate_side_panel(side_panel, selected_text)
+        def _update_preview(_event=None):
+            sel = list_of_files.selection()
+            if sel:
+                rel_path = list_of_files.item(sel[0], "values")[0]
+                FileSelectionPopup.populate_side_panel(side_panel, drive_full_path + rel_path)
+
+        list_of_files.bind("<<TreeviewSelect>>", _update_preview)
+        _update_preview()
 
 
         def keep_this():
@@ -154,6 +164,9 @@ class FileSelectionPopup:
             tracer.log(f"Treeview width: {list_of_files.winfo_width()} pixels")
             tracer.log(f"Treeview height: {list_of_files.winfo_height()} pixels")
 
+        self.popup.lift()
+        self.popup.focus_set()
+
         # Schedule the logging after the popup window is rendered
         self.popup.after(100, log_treeview_dimensions)
 
@@ -195,36 +208,31 @@ class FileSelectionPopup:
 
     @staticmethod
     def populate_side_panel(side_panel, file_path):
-        tracer.log("")
+        for widget in side_panel.winfo_children():
+            widget.destroy()
+
+        tk.Label(side_panel, text=os.path.basename(file_path),
+                 font=("Helvetica", 8, "bold"), anchor="w", wraplength=210).pack(fill="x", padx=4, pady=(6, 2))
+
+        ext = os.path.splitext(file_path)[1].lower()
+        image_exts = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp"}
+        if ext in image_exts:
+            try:
+                img = Image.open(file_path)
+                img.thumbnail((210, 280))
+                photo = ImageTk.PhotoImage(img)
+                lbl = tk.Label(side_panel, image=photo)
+                lbl.image = photo
+                lbl.pack(padx=4, pady=4)
+            except Exception as e:
+                tracer.log(f"Image preview error: {e}")
+
+        tk.Label(side_panel, text="First 100 chars:", font=("Helvetica", 8, "bold"),
+                 anchor="w").pack(fill="x", padx=4, pady=(6, 0))
         try:
-            extension = file_path.split(".")[-1]
-            tracer.log(f"File extension: {extension}")
-            #see if file is an image file
-            isImage = extension.lower() in ["jpg", "jpeg", "png", "gif"]
-            if isImage:
-                # Add an image to the side panel (example with a placeholder image)
-                image = tk.PhotoImage(file=file_path)  # Replace with actual image path
-                # Resize image to fit within max dimensions
-                img_width = image.width()
-                img_height = image.height()
-                scale = min(150/img_width, 600/img_height)
-                if scale < 1:
-                    new_width = int(img_width * scale)
-                    new_height = int(img_height * scale)
-                    image = image.subsample(int(1/scale))
-                label = tk.Label(side_panel, image=image)
-                label.image = image  # Keep a reference to avoid garbage collection
-                label.pack(pady=5) 
-            else:
-                # Add a label to the side panel (example with text)
-                # Read first few characters of the file
-                try:
-                    with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
-                        preview = f.read(100)  # Read first 100 characters
-                except Exception as e:
-                    tracer.log(f"Error 96424: in populate_side_panel: {e}")
-                    preview = "Error reading file."
-                label = tk.Label(side_panel, text=f"File preview:\n{preview}", wraplength=150, width=20)
-                label.pack(pady=5)
-        except Exception as e:
-            tracer.log(f"Error 96425: in populate_side_panel: {e}")
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                preview = f.read(100)
+        except Exception:
+            preview = "(cannot read file)"
+        tk.Label(side_panel, text=preview or "(empty file)", wraplength=210,
+                 anchor="nw", justify="left", font=("Courier", 8)).pack(fill="x", padx=4)

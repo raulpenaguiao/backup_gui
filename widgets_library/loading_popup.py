@@ -1,102 +1,168 @@
+import os
+import time
 import tkinter as tk
 from tkinter import ttk
-from widgets_library.square_small_button import SquareSmallButton  # Assuming this is also converted to tkinter
 import tools_library.tracer as tracer
 from tools_library.progress_tracker import ProgressTracker
 
+_POLL_MS = 150
 
-def loading_info_to_title(ProgressTracker):
-    """Convert ProgressTracker info to title"""
-    if ProgressTracker.loaded:
-        return f"{ProgressTracker.name} - {ProgressTracker.current_value} {ProgressTracker.unit} out of {ProgressTracker.total_value} processed"
-    return f"{ProgressTracker.name} - Progress not started"
 
-class LoadingPopup(tk.Toplevel):
-    def __init__(self, root, progress_tracker):
-        #super().__init__(root)
-        self.popup = tk.Toplevel(root)
+def _fmt_time(seconds):
+    s = int(seconds)
+    if s < 60:
+        return f"0:{s:02d}"
+    m, s = divmod(s, 60)
+    if m < 60:
+        return f"{m}:{s:02d}"
+    h, m = divmod(m, 60)
+    return f"{h}:{m:02d}:{s:02d}"
+
+
+def _overall_pct(pt):
+    if pt.phase == "sizing":
+        return 95.0
+    if pt.phase == "bfs":
+        return pt.bfs_progress * 30.0
+    if pt.loaded and pt.total_value > 0:
+        return 30.0 + (pt.current_value / pt.total_value) * 65.0
+    return 30.0
+
+
+class LoadingPopup:
+    def __init__(self, parent, progress_tracker, cancel_token=None, title="Indexing vault..."):
+        if not isinstance(progress_tracker, ProgressTracker):
+            raise ValueError("progress_tracker must be a ProgressTracker instance")
         self.progress_tracker = progress_tracker
-        tracer.log("LoadingPopup initializing")
-        tracer.log(f"ProgressTracker: {self.progress_tracker}")
-        if not isinstance(self.progress_tracker, ProgressTracker):
-            raise ValueError("Error 69957: ProgressTracker must be an instance of ProgressTracker")
-        
-        self.popup.title("Loading...")
-        self.popup.geometry("600x400")
-        tracer.log("Initializing LoadingPopup")
+        self.cancel_token = cancel_token
+        self._start_time = time.time()
+        self._phase2_start = None
+        self._last_pct = 0.0
+
+        self.popup = tk.Toplevel(parent)
+        self.popup.title(title)
+        self.popup.geometry("600x200")
         self.popup.resizable(False, False)
+        self.popup.protocol("WM_DELETE_WINDOW", self._on_cancel)
 
-        # Center the window
         self.popup.update_idletasks()
-        screen_width = self.popup.winfo_screenwidth()
-        screen_height = self.popup.winfo_screenheight()
-        x = (screen_width - 600) // 2
-        y = (screen_height - 400) // 2
-        self.popup.geometry(f"+{x}+{y}")
-        tracer.log("Centered window")
-        
-        # Create main frame
-        main_frame = ttk.Frame(self.popup, padding="10")
-        main_frame.pack(fill=tk.BOTH, expand=True)
-        tracer.log("Main frame created")
-        
-        # Create label for file count
-        self.popup.file_count_label = ttk.Label(main_frame, text=loading_info_to_title(self.progress_tracker))
-        self.popup.file_count_label.pack(pady=(10, 20))
+        sw, sh = self.popup.winfo_screenwidth(), self.popup.winfo_screenheight()
+        self.popup.geometry(f"+{(sw - 600) // 2}+{(sh - 200) // 2}")
 
-        # Create and configure progress bar style
-        style = ttk.Style()
-        style.configure("Custom.Horizontal.TProgressbar",
-                       troughcolor='white',
-                       background='#4CAF50',
-                       bordercolor='#CCCCCC',
-                       lightcolor='#4CAF50',
-                       darkcolor='#4CAF50')
-        tracer.log("Progress bar style configured")
-        
-        # Create progress bar
-        self.popup.progress_bar = ttk.Progressbar(
-            main_frame,
-            orient="horizontal",
-            length=300,
-            mode="determinate",
-            style="Custom.Horizontal.TProgressbar"
-        )
-        self.popup.progress_bar.pack(expand=True)
-        tracer.log("Progress bar created")
-        
-        # Create bottom frame for button
-        bottom_frame = ttk.Frame(main_frame)
-        bottom_frame.pack(fill=tk.X, pady=(0, 12))
-        tracer.log("Bottom frame created")
-        
-        # Add button to bottom right
-        self.popup.close_button = SquareSmallButton(bottom_frame)
-        self.popup.close_button.button.pack(side=tk.RIGHT, padx=12)
-        tracer.log("Close button added")
+        self._frame = tk.Frame(self.popup, padx=18, pady=12)
+        self._frame.pack(fill=tk.BOTH, expand=True)
 
-        self.popup.loading_label = ttk.Label(main_frame, text="Loading, please wait...")
-        self.popup.loading_label.pack(pady=(10, 0))
-        tracer.log("Loading label added")
+        top_row = tk.Frame(self._frame)
+        top_row.pack(fill=tk.X, pady=(0, 6))
+        tk.Label(top_row, text=title, font=("Helvetica", 11, "bold")).pack(side=tk.LEFT)
+        if cancel_token is not None:
+            tk.Button(top_row, text="Cancel", command=self._on_cancel,
+                      relief=tk.FLAT, bg="#dddddd").pack(side=tk.RIGHT)
 
-        progress_tracker.subscribe(self.update_text, "0")
-        tracer.log("Subscribed to text update")
+        self._bar = ttk.Progressbar(self._frame, length=564, mode="determinate", maximum=100)
+        self._bar.pack(pady=(0, 4))
 
-        
-    
-    def update_text(self):
-        """Update the label text when progress tracker changes"""
+        self._count_label = tk.Label(self._frame, text="Scanning...", anchor=tk.W)
+        self._count_label.pack(fill=tk.X)
 
+        self._file_label = tk.Label(self._frame, text="", anchor=tk.W, fg="gray",
+                                    font=("Helvetica", 8))
+        self._file_label.pack(fill=tk.X)
+
+        self._time_label = tk.Label(self._frame, text="Elapsed: 0:00", anchor=tk.W, fg="#555")
+        self._time_label.pack(fill=tk.X, pady=(2, 0))
+
+        self._poll_id = None
+        self._poll()
+
+    def _on_cancel(self):
+        if self.cancel_token is not None:
+            self.cancel_token.set()
+        # Destroy immediately — background thread will clean up via _on_cancelled
+        self.destroy()
+
+    def _poll(self):
         try:
-            if self.progress_tracker.finished:
-                tracer.log("Progress finished")
+            if not self.popup.winfo_exists():
                 return
-            tracer.log("Update the label text")
-            self.popup.file_count_label.config(text=loading_info_to_title(self.progress_tracker))
-            self.popup.progress_bar["value"] = self.progress_tracker.current_value / self.progress_tracker.total_value * 100
-            self.popup.update()
+            pt = self.progress_tracker
+
+            # Progress bar
+            pct = max(_overall_pct(pt), self._last_pct)
+            self._last_pct = pct
+            self._bar["value"] = pct
+
+            # Count label
+            fname = os.path.basename(getattr(pt, "current_file", "") or "")
+            if pt.phase == "sizing":
+                self._count_label.config(text="Computing sizes...")
+                self._file_label.config(text="")
+            elif pt.phase == "bfs":
+                found = getattr(pt, "_scan_found", 0)
+                est = getattr(pt, "_scan_estimate", 0)
+                self._count_label.config(
+                    text=f"Scanning: {found:,} found (~{est:,} estimated)"
+                )
+                self._file_label.config(text=fname)
+            elif pt.loaded and pt.total_value > 0:
+                self._count_label.config(
+                    text=f"Processing: {pt.current_value:,} / {pt.total_value:,} entries"
+                )
+                self._file_label.config(text=fname)
+
+            # Elapsed + ETA
+            elapsed = time.time() - self._start_time
+            if pt.phase == "hashing" and pt.loaded and pt.current_value > 0:
+                if self._phase2_start is None:
+                    self._phase2_start = time.time()
+                elapsed_p2 = time.time() - self._phase2_start
+                rate = pt.current_value / max(elapsed_p2, 0.001)
+                remaining = (pt.total_value - pt.current_value) / max(rate, 0.001)
+                self._time_label.config(
+                    text=f"Elapsed: {_fmt_time(elapsed)}   ETA: ~{_fmt_time(remaining)}"
+                )
+            else:
+                self._time_label.config(text=f"Elapsed: {_fmt_time(elapsed)}")
+
+            if not pt.finished:
+                self._poll_id = self.popup.after(_POLL_MS, self._poll)
+            # When finished: wait for show_done() to be called from main thread
+
         except Exception as e:
-            tracer.log(f"Error updating label: {e}")
-            self.popup.file_count_label.config(text="Error updating progress")
-            self.progress_tracker.unsubscribe("0")
-            self.popup.update()
+            tracer.log(f"LoadingPopup poll error: {e}")
+
+    def show_done(self, on_open):
+        """Called from main thread after indexing completes. Shows stats + View Panel button."""
+        try:
+            if not self.popup.winfo_exists():
+                return
+            pt = self.progress_tracker
+            elapsed = time.time() - self._start_time
+            self._bar["value"] = 100
+            self._count_label.config(
+                text=f"Done  {pt.total_value:,} entries indexed"
+            )
+            self._file_label.config(text="")
+            self._time_label.config(text=f"Total time: {_fmt_time(elapsed)}")
+
+            self.popup.geometry("600x220")
+            btn_row = tk.Frame(self._frame, pady=6)
+            btn_row.pack(fill=tk.X)
+            tk.Button(btn_row, text="Open Vault",
+                      command=on_open,
+                      font=("Helvetica", 10),
+                      padx=16, pady=6).pack(side=tk.RIGHT)
+        except Exception as e:
+            tracer.log(f"LoadingPopup show_done error: {e}")
+
+    def destroy(self):
+        if self._poll_id is not None:
+            try:
+                self.popup.after_cancel(self._poll_id)
+            except Exception:
+                pass
+            self._poll_id = None
+        try:
+            self.popup.destroy()
+        except Exception:
+            pass
