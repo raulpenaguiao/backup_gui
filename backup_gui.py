@@ -6,6 +6,7 @@ from tools_library.dbs import initialize_vaults, get_saved_vaults
 from tools_library.pigmy_hash import index_vault, save_pigmy_hash, load_pigmy_hash
 from tools_library.file_tree import build_size_index
 from tools_library.progress_tracker import ProgressTracker
+from tools_library.app_icon import setup_icon
 from widgets_library.vault_picker import VaultPicker
 from widgets_library.main_window import MainWindow
 from widgets_library.loading_popup import LoadingPopup
@@ -15,7 +16,7 @@ import tools_library.tracer as tracer
 class App:
     def __init__(self, root):
         self.root = root
-        self.root.title("Pigmy Backup")
+        self.root.title("Pigmy Backup Application")
         self.root.geometry("960x620")
         self.root.minsize(700, 460)
         self._view = None
@@ -24,11 +25,7 @@ class App:
     def _show_vault_picker(self):
         if self._view:
             self._view.destroy()
-        self._view = VaultPicker(
-            self.root,
-            on_vault_open=self._open_vault,
-            on_vault_reindex=self._reindex_vault,
-        )
+        self._view = VaultPicker(self.root, on_vault_open=self._open_vault)
 
     def _open_vault(self, vault_path):
         pigmy_hash_path = os.path.join(vault_path, drive_variables.pigmy_hash_file)
@@ -93,7 +90,9 @@ class App:
         if self._view:
             self._view.destroy()
         self._view = MainWindow(
-            self.root, vault_path, pigmyhash, sizes, file_counts, on_back=self._show_vault_picker
+            self.root, vault_path, pigmyhash, sizes, file_counts,
+            on_back=self._show_vault_picker,
+            on_reindex=lambda: self._reindex_vault(vault_path),
         )
 
 
@@ -102,6 +101,7 @@ def create_gui():
     initialize_vaults()
     root = tk.Tk()
     root.protocol("WM_DELETE_WINDOW", root.destroy)
+    setup_icon(root)
     App(root)
     root.mainloop()
 

@@ -1,38 +1,121 @@
-name: Build executables
+name: Build and Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release version'
-        required: true
-        type: string
+  push:
+    branches: [main]
+
+# Needed to create GitHub Releases and upload assets
+permissions:
+  contents: write
 
 jobs:
+  # ── Build on each platform in parallel ──────────────────────────────────────
   build:
+    name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false   # let all three platforms finish even if one fails
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            artifact_name: PigmyBackup-linux
+          - os: windows-latest
+            artifact_name: PigmyBackup-windows
+          - os: macos-latest
+            artifact_name: PigmyBackup-macos
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Install PyInstaller
-        run: pip install pyinstaller
+      # The _tkinter C extension needs the system Tcl/Tk libraries on Linux
+      - name: Install Tcl/Tk system libraries (Linux only)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y python3-tk
 
-      - name: Build executable
+      - name: Install Python dependencies
         run: |
-          python3 .\releases\compiler\compiler.py
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Build with PyInstaller
+        shell: bash
+        run: |
+          pyinstaller \
+            --onefile \
+            --windowed \
+            --name PigmyBackup \
+            --distpath dist \
+            --workpath build/_pyinstaller \
+            --specpath build \
+            backup_gui.py
+
+      # Give each binary a platform suffix so all three can coexist in one release
+      - name: Rename binary for platform
+        shell: bash
+        run: |
+          if   [ "$RUNNER_OS" = "Windows" ]; then mv dist/PigmyBackup.exe dist/PigmyBackup-windows.exe
+          elif [ "$RUNNER_OS" = "macOS"   ]; then mv dist/PigmyBackup     dist/PigmyBackup-macos
+          else                                    mv dist/PigmyBackup     dist/PigmyBackup-linux
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: backup_helper-${{ matrix.os }}
-          path: dist/backup_helper*
+          name: ${{ matrix.artifact_name }}
+          path: dist/
+          if-no-files-found: error
+
+  # ── Collect artifacts and publish a GitHub Release ──────────────────────────
+  release:
+    name: Create Release
+    needs: build          # waits for all three builds; fails if any build failed
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build release metadata
+        id: meta
+        run: |
+          VERSION=$(cat VERSION)
+          SHA=$(git rev-parse --short HEAD)
+          echo "version=$VERSION"                       >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}-${SHA}"                 >> "$GITHUB_OUTPUT"
+          echo "name=Pigmy Backup v${VERSION} (${SHA})" >> "$GITHUB_OUTPUT"
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.name }}
+          body: |
+            **Version:** `${{ steps.meta.outputs.version }}`
+            **Commit:** ${{ github.sha }}
+            **Branch:** `${{ github.ref_name }}`
+
+            | Platform | File |
+            |----------|------|
+            | Windows  | `PigmyBackup-windows.exe` |
+            | macOS    | `PigmyBackup-macos` |
+            | Linux    | `PigmyBackup-linux` |
+
+            > **Windows:** SmartScreen may warn on first launch — click *More info → Run anyway*.
+            > **macOS:** If Gatekeeper blocks it, run `xattr -cr PigmyBackup-macos` once in a terminal.
+          files: |
+            artifacts/PigmyBackup-linux/PigmyBackup-linux
+            artifacts/PigmyBackup-windows/PigmyBackup-windows.exe
+            artifacts/PigmyBackup-macos/PigmyBackup-macos
+          fail_on_unmatched_files: true

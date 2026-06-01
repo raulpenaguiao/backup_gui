@@ -25,13 +25,17 @@ class FileSelectionPopup:
         x_coordinate = (screen_width - window_width) // 2
         y_coordinate = (screen_height - window_height) // 2
         self.popup.geometry(f"{window_width}x{window_height}+{x_coordinate}+{y_coordinate}")
-        self.popup.title("Select files to keep")
+        self.popup.title("Pigmy Backup Application")
         self.result = None
         tracer.log(f"Center the popup window at x={x_coordinate}, y={y_coordinate}")
 
-        label_text = f"File {trial + 1} for {number_of_repetitions}.\nSelect which of these files to keep:"
-        label = tk.Label(self.popup, text=label_text)
-        label.pack(pady=10)
+        tk.Label(self.popup, text="Select files to keep",
+                 font=("Helvetica", 15, "bold"), anchor="w").pack(fill=tk.X, padx=14, pady=(10, 0))
+        ttk.Separator(self.popup, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=14, pady=(6, 0))
+
+        label_text = f"File {trial + 1} of {number_of_repetitions}. Select which file to keep:"
+        label = tk.Label(self.popup, text=label_text, anchor="w")
+        label.pack(fill=tk.X, padx=14, pady=(6, 0))
 
         
         len_drive_full_path = len(drive_full_path)

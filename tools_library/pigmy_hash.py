@@ -169,4 +169,10 @@ def save_pigmy_hash(vault_path, pigmyhash):
 def load_pigmy_hash(vault_path):
     path = os.path.join(vault_path, drive_variables.pigmy_hash_file)
     with open(path, "r") as f:
-        return json.load(f)
+        data = json.load(f)
+    # Normalize separators — tkinter returns forward-slash paths on Windows,
+    # which mix with os.sep when scandir builds child paths, breaking send2trash.
+    return {
+        h: [[os.path.normpath(p) for p in group] for group in groups]
+        for h, groups in data.items()
+    }

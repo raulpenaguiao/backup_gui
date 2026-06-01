@@ -1,22 +1,22 @@
 import os
 import tkinter as tk
 from tkinter import ttk, filedialog
-import send2trash
 import tools_library.tracer as tracer
 from tools_library.file_tree import human_size
-from tools_library.vault_operations import delete_empty_folders, get_repetitions, filter_external_vault
-from widgets_library.file_selection_popup import FileSelectionPopup
+from tools_library.vault_operations import delete_empty_folders, get_repetitions, get_folder_repetitions, filter_external_vault
+from widgets_library.duplicates_review_popup import DuplicatesReviewPopup
 from widgets_library.tooltip import Tooltip
 
 _SKIP = {".pigmy-hash", ".pigmy"}
 
 
 class MainWindow:
-    def __init__(self, root, vault_path, pigmyhash, sizes, file_counts, on_back):
+    def __init__(self, root, vault_path, pigmyhash, sizes, file_counts, on_back, on_reindex):
         self.root = root
         self.vault_path = vault_path
         self.pigmyhash = pigmyhash
         self.on_back = on_back
+        self.on_reindex = on_reindex
         self._sizes = sizes
         self._file_counts = file_counts
         self._path_map = {}
@@ -28,7 +28,7 @@ class MainWindow:
     # ── Layout ────────────────────────────────────────────────────────────────
 
     def _build(self):
-        self.root.title("Vault management")
+        self.root.title("Pigmy Backup Application")
         self.frame = tk.Frame(self.root)
         self.frame.pack(fill=tk.BOTH, expand=True)
         self.frame.columnconfigure(0, weight=1)
@@ -37,16 +37,16 @@ class MainWindow:
         # Row 0 — header
         hdr = tk.Frame(self.frame, pady=6, padx=10)
         hdr.grid(row=0, column=0, sticky="ew")
-        btn_change = tk.Button(hdr, text="< Change", command=self.on_back, relief=tk.FLAT)
-        btn_change.pack(side=tk.LEFT)
-        Tooltip(btn_change, "Go back to the vault selection screen.")
-        tk.Label(hdr, text="Pigmy Backup",
-                 font=("Helvetica", 13, "bold")).pack(side=tk.LEFT, padx=10)
+        tk.Label(hdr, text="Vault management",
+                 font=("Helvetica", 13, "bold")).pack(side=tk.LEFT, padx=(0, 10))
         tk.Label(hdr, text=self.vault_path,
                  fg="#555", font=("Helvetica", 9)).pack(side=tk.LEFT)
         btn_quit = tk.Button(hdr, text="Quit", command=self.root.destroy, relief=tk.FLAT)
         btn_quit.pack(side=tk.RIGHT)
         Tooltip(btn_quit, "Close the application.")
+        btn_change = tk.Button(hdr, text="< Change", command=self.on_back, relief=tk.FLAT)
+        btn_change.pack(side=tk.RIGHT, padx=(0, 8))
+        Tooltip(btn_change, "Go back to the vault selection screen.")
 
         ttk.Separator(self.frame, orient=tk.HORIZONTAL).grid(
             row=1, column=0, sticky="ew")
@@ -57,15 +57,18 @@ class MainWindow:
         btn_empty = tk.Button(btn_row, text="Delete Empty Folders",
                               command=self._delete_empty_folders)
         btn_empty.pack(side=tk.LEFT, padx=(0, 6))
-        Tooltip(btn_empty, "Find and send all empty folders inside the vault to the recycle bin.")
-        btn_reps = tk.Button(btn_row, text="Delete Repetitions",
-                             command=self._delete_repetitions)
-        btn_reps.pack(side=tk.LEFT, padx=(0, 6))
-        Tooltip(btn_reps, "Find files with identical content and review each duplicate group — keep one copy, delete all, or skip.")
+        Tooltip(btn_empty, "Find and send all empty folders inside the vault to the recycle bin. A folder is considered empty only if it contains no files and no subfolders, including hidden files.")
+        btn_dups = tk.Button(btn_row, text="Review Duplicates",
+                             command=self._review_duplicates)
+        btn_dups.pack(side=tk.LEFT, padx=(0, 6))
+        Tooltip(btn_dups, "Review all duplicates: identical folder pairs first (largest first), then identical file groups (largest first).")
         btn_filter = tk.Button(btn_row, text="Filter External Vault",
                                command=self._filter_external)
-        btn_filter.pack(side=tk.LEFT)
+        btn_filter.pack(side=tk.LEFT, padx=(0, 6))
         Tooltip(btn_filter, "Pick an external folder and remove any files from it that already exist in this vault.")
+        btn_reindex = tk.Button(btn_row, text="Reindex", command=self.on_reindex)
+        btn_reindex.pack(side=tk.LEFT)
+        Tooltip(btn_reindex, "Rebuild the index database for this vault — re-scans all files and recomputes hashes. Use after adding, removing, or modifying files.")
 
         ttk.Separator(self.frame, orient=tk.HORIZONTAL).grid(
             row=3, column=0, sticky="ew")
@@ -236,53 +239,16 @@ class MainWindow:
         else:
             self._log("No empty folders found.")
 
-    def _delete_repetitions(self):
+    def _review_duplicates(self):
         self._clear()
-        reps = get_repetitions(self.pigmyhash)
-        if not reps:
-            self._log("No duplicate files found in this vault.")
+        folder_pairs = get_folder_repetitions(self.pigmyhash)
+        file_groups = get_repetitions(self.pigmyhash)
+        total = len(folder_pairs) + len(file_groups)
+        if total == 0:
+            self._log("No duplicates found.")
             return
-        self._log(f"Found {len(reps)} group(s) of duplicate files. Opening review...")
-        self._rep_index = 0
-        self._reps = [
-            [{"file_path": p, "leave_copies": False} for p in group]
-            for group in reps
-        ]
-        self._show_next_rep()
-
-    def _show_next_rep(self):
-        if self._rep_index >= len(self._reps):
-            self._log("Done reviewing duplicates.")
-            return
-        rep = self._reps[self._rep_index]
-
-        def on_close():
-            try:
-                result = self._popup.result
-                if result is None:
-                    return
-                action = result[0]
-                if action == "keep this":
-                    keep_path = result[1]
-                    for f in rep:
-                        if f["file_path"] != keep_path and os.path.exists(f["file_path"]):
-                            send2trash.send2trash(f["file_path"])
-                            self._log(f"  Deleted: {f['file_path']}")
-                elif action == "delete all":
-                    for f in rep:
-                        if os.path.exists(f["file_path"]):
-                            send2trash.send2trash(f["file_path"])
-                            self._log(f"  Deleted: {f['file_path']}")
-                if action != "leave":
-                    self._rep_index += 1
-                    self._show_next_rep()
-            except Exception as e:
-                tracer.log(f"Error in _show_next_rep: {e}")
-
-        self._popup = FileSelectionPopup(
-            self.root, rep, self._rep_index, len(self._reps),
-            on_close=on_close, drive_full_path=self.vault_path,
-        )
+        self._log(f"Found {len(folder_pairs)} duplicate folder pair(s) and {len(file_groups)} duplicate file group(s). Opening review...")
+        DuplicatesReviewPopup(self.root, folder_pairs, file_groups, self._sizes, self.vault_path)
 
     def _filter_external(self):
         path = filedialog.askdirectory(title="Select external vault to filter")

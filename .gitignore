@@ -184,10 +184,5 @@ cython_debug/
 
 
 
-# test folders for the executables
-releases/*/.drive_info
-releases/*/config
-releases/*/log
-releases/*/.drive_info/fileinfo.json
-
-releases/0.0.0/windows/.drive_info/fileinfo.json
+# local build output — binaries live in GitHub Releases, not in the repo
+releases/

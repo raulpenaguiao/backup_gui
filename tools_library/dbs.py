@@ -1,8 +1,14 @@
 import os
+import sys
 import json
 from tools_library.drive_variables import drives_file, vaults_file, config_folder
 
-PROGRAM_DIR = os.getcwd()
+if getattr(sys, 'frozen', False):
+    # Running as a PyInstaller executable — use the directory that holds the exe
+    PROGRAM_DIR = os.path.dirname(sys.executable)
+else:
+    # Running as a script — project root is one level above tools_library/
+    PROGRAM_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIGFOLDER_PATH = os.path.join(PROGRAM_DIR, config_folder)
 DRIVESPATH_FILE = os.path.join(CONFIGFOLDER_PATH, drives_file)
 VAULTSPATH_FILE = os.path.join(CONFIGFOLDER_PATH, vaults_file)

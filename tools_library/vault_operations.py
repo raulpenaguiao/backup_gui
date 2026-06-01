@@ -6,14 +6,19 @@ from tools_library.pigmy_hash import compute_file_hash
 
 
 def delete_empty_folders(vault_path):
-    """Remove all empty directories inside vault_path. Returns list of deleted paths."""
+    """
+    Remove all empty directories inside vault_path. Returns list of deleted paths.
+    os.listdir includes hidden files (dot-files on Unix, hidden-attribute files on
+    Windows), so a folder is only considered empty when it truly has no contents.
+    """
     deleted = []
     for dirpath, dirnames, filenames in os.walk(vault_path, topdown=False):
         if dirpath == vault_path:
             continue
         try:
+            # os.listdir returns all entries including hidden files and folders
             if not os.listdir(dirpath):
-                send2trash.send2trash(dirpath)
+                send2trash.send2trash(os.path.normpath(dirpath))
                 deleted.append(dirpath)
                 tracer.log(f"Deleted empty folder: {dirpath}")
         except Exception as e:
@@ -65,7 +70,7 @@ def filter_external_vault(pigmyhash, external_path):
             for vault_file in vault_files_by_hash[h]:
                 try:
                     if filecmp.cmp(file_path, vault_file, shallow=False):
-                        send2trash.send2trash(file_path)
+                        send2trash.send2trash(os.path.normpath(file_path))
                         deleted.append(file_path)
                         tracer.log(f"Filtered from external: {file_path}")
                         break

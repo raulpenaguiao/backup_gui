@@ -8,19 +8,18 @@ from widgets_library.tooltip import Tooltip
 
 
 class VaultPicker:
-    def __init__(self, root, on_vault_open, on_vault_reindex):
+    def __init__(self, root, on_vault_open):
         self.root = root
         self.on_vault_open = on_vault_open
-        self.on_vault_reindex = on_vault_reindex
         self._build()
 
     def _build(self):
-        self.root.title("Index Menu")
+        self.root.title("Pigmy Backup Application")
         self.frame = ttk.Frame(self.root, padding=40)
         self.frame.pack(fill=tk.BOTH, expand=True)
 
         ttk.Label(
-            self.frame, text="Pigmy Backup", font=("Helvetica", 20, "bold")
+            self.frame, text="Pigmy Backup Application", font=("Helvetica", 20, "bold")
         ).pack(pady=(0, 4))
         ttk.Label(
             self.frame, text="Select a vault to open", font=("Helvetica", 10), foreground="gray"
@@ -47,10 +46,10 @@ class VaultPicker:
         # Action buttons row
         btn_row = ttk.Frame(self.frame)
         btn_row.pack(fill=tk.X, pady=(0, 24))
-        btn_browse = ttk.Button(btn_row, text="Browse...", command=self._browse)
-        btn_browse.pack(side=tk.LEFT, padx=(0, 6))
+        btn_browse = ttk.Button(btn_row, text="+", command=self._browse, width=3)
+        btn_browse.pack(side=tk.LEFT, padx=(0, 4))
         Tooltip(btn_browse, "Open a folder picker to add a new vault to the list.")
-        btn_remove = ttk.Button(btn_row, text="Remove", command=self._remove)
+        btn_remove = ttk.Button(btn_row, text="−", command=self._remove, width=3)
         btn_remove.pack(side=tk.LEFT)
         Tooltip(btn_remove, "Remove the selected vault from the list. Does not delete any files on disk.")
 
@@ -58,10 +57,7 @@ class VaultPicker:
         bottom_row.pack(fill=tk.X)
         btn_open = ttk.Button(bottom_row, text="Open Vault", command=self._open)
         btn_open.pack(side=tk.LEFT, ipadx=24, ipady=10)
-        Tooltip(btn_open, "Open the selected vault using its existing index and go to Vault management.")
-        btn_reindex = ttk.Button(bottom_row, text="Reindex", command=self._reindex)
-        btn_reindex.pack(side=tk.LEFT, padx=(6, 0), ipadx=12, ipady=10)
-        Tooltip(btn_reindex, "Rebuild the index database for this vault — scans every file, computes hashes, and saves the result. Use this if files have changed since the last index.")
+        Tooltip(btn_open, "Open the selected vault. If no index exists yet, one will be created automatically.")
 
     def _refresh_list(self):
         self._listbox.delete(0, tk.END)
@@ -75,6 +71,7 @@ class VaultPicker:
         path = filedialog.askdirectory(title="Select vault folder")
         if not path:
             return
+        path = os.path.normpath(path)
         if path not in drive_variables.vaults:
             drive_variables.vaults.append(path)
             dbs.update_vaults_list(drive_variables.vaults)
@@ -102,22 +99,17 @@ class VaultPicker:
         if not sel:
             messagebox.showinfo("No vault selected", "Please select or browse for a vault first.")
             return
-        path = self._listbox.get(sel[0])
+        path = os.path.normpath(self._listbox.get(sel[0]))
         if not os.path.isdir(path):
-            messagebox.showerror("Vault not found", f"The folder no longer exists:\n{path}")
+            if messagebox.askyesno(
+                "Vault not found",
+                f"The folder no longer exists:\n{path}\n\nRemove it from the list?",
+            ):
+                drive_variables.vaults = [v for v in drive_variables.vaults if v != path]
+                dbs.update_vaults_list(drive_variables.vaults)
+                self._refresh_list()
             return
         self.on_vault_open(path)
-
-    def _reindex(self):
-        sel = self._listbox.curselection()
-        if not sel:
-            messagebox.showinfo("No vault selected", "Please select or browse for a vault first.")
-            return
-        path = self._listbox.get(sel[0])
-        if not os.path.isdir(path):
-            messagebox.showerror("Vault not found", f"The folder no longer exists:\n{path}")
-            return
-        self.on_vault_reindex(path)
 
     def destroy(self):
         self.frame.destroy()

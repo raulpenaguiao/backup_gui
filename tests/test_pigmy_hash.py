@@ -57,7 +57,12 @@ class TestPigmyHashRoundtrip(unittest.TestCase):
         }
         save_pigmy_hash(self.tmp, original)
         loaded = load_pigmy_hash(self.tmp)
-        self.assertEqual(original, loaded)
+        # load_pigmy_hash normalizes separators, so compare against normpath'd expected
+        expected = {
+            h: [[os.path.normpath(p) for p in group] for group in groups]
+            for h, groups in original.items()
+        }
+        self.assertEqual(expected, loaded)
 
     def test_empty_hash_roundtrip(self):
         save_pigmy_hash(self.tmp, {})

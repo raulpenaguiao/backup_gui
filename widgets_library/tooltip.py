@@ -32,17 +32,21 @@ class Tooltip:
     def _show(self):
         if self._tip:
             return
-        x = self._widget.winfo_rootx() + self._widget.winfo_width() // 2
-        y = self._widget.winfo_rooty() + self._widget.winfo_height() + 4
         self._tip = tk.Toplevel(self._widget)
         self._tip.wm_overrideredirect(True)
-        self._tip.wm_geometry(f"+{x}+{y}")
+        # Place off-screen first so we can measure height
+        self._tip.wm_geometry("+10000+10000")
         lbl = tk.Label(
             self._tip, text=self._text, justify=tk.LEFT,
             background="#ffffe0", relief=tk.SOLID, borderwidth=1,
-            font=("Helvetica", 9), wraplength=280, padx=_PAD, pady=_PAD,
+            font=("Helvetica", 9), wraplength=300, padx=_PAD, pady=_PAD,
         )
         lbl.pack()
+        self._tip.update_idletasks()
+        tip_h = self._tip.winfo_reqheight()
+        x = self._widget.winfo_rootx()
+        y = self._widget.winfo_rooty() - tip_h - 4  # always above the widget
+        self._tip.wm_geometry(f"+{x}+{y}")
 
     def _hide(self):
         if self._tip:

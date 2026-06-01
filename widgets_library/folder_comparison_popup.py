@@ -17,10 +17,14 @@ class FolderComparisonPopup:
         self._index = 0
 
         self.popup = tk.Toplevel(root)
-        self.popup.title("Duplicate Folders")
+        self.popup.title("Pigmy Backup Application")
         self.popup.geometry("1100x660")
         self.popup.minsize(700, 400)
         self.popup.protocol("WM_DELETE_WINDOW", self._leave)
+
+        tk.Label(self.popup, text="Duplicate Folders",
+                 font=("Helvetica", 15, "bold"), anchor="w").pack(fill=tk.X, padx=10, pady=(10, 0))
+        ttk.Separator(self.popup, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=10, pady=(6, 0))
 
         # Header row
         hdr = tk.Frame(self.popup, padx=10, pady=6)

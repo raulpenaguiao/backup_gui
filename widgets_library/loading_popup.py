@@ -40,7 +40,7 @@ class LoadingPopup:
         self._last_pct = 0.0
 
         self.popup = tk.Toplevel(parent)
-        self.popup.title(title)
+        self.popup.title("Pigmy Backup Application")
         self.popup.geometry("600x200")
         self.popup.resizable(False, False)
         self.popup.protocol("WM_DELETE_WINDOW", self._on_cancel)
@@ -54,7 +54,7 @@ class LoadingPopup:
 
         top_row = tk.Frame(self._frame)
         top_row.pack(fill=tk.X, pady=(0, 6))
-        tk.Label(top_row, text=title, font=("Helvetica", 11, "bold")).pack(side=tk.LEFT)
+        tk.Label(top_row, text=title, font=("Helvetica", 15, "bold")).pack(side=tk.LEFT)
         if cancel_token is not None:
             tk.Button(top_row, text="Cancel", command=self._on_cancel,
                       relief=tk.FLAT, bg="#dddddd").pack(side=tk.RIGHT)
