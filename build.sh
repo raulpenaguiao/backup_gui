@@ -25,13 +25,18 @@ fi
 # Always run from the project root regardless of where the script is called from
 cd "$(dirname "$0")"
 
-RELEASE_DIR="releases/$VERSION"
 OS="$(uname -s)"
+case "$OS" in
+  Darwin) PLATFORM="macos" ;;
+  *)      PLATFORM="linux" ;;
+esac
+
+PLATFORM_DIR="releases/$VERSION/$PLATFORM"
 
 echo "=============================="
 echo " Pigmy Backup — Build $VERSION"
-echo " Platform : $OS"
-echo " Output   : $RELEASE_DIR"
+echo " Platform : $PLATFORM"
+echo " Output   : $PLATFORM_DIR"
 echo "=============================="
 echo ""
 
@@ -56,29 +61,28 @@ echo "All tests passed."
 # ── 3. PyInstaller build ──────────────────────────────────────────────────────
 echo ""
 echo "[3/4] Building executable..."
-rm -rf "$RELEASE_DIR"
-mkdir -p "$RELEASE_DIR"
+rm -rf "$PLATFORM_DIR"
+mkdir -p "$PLATFORM_DIR"
 
-# --windowed suppresses the terminal window on macOS; on Linux it is a no-op
-pyinstaller \
+python3 -m PyInstaller \
   --onefile \
   --windowed \
   --name "PigmyBackup" \
-  --distpath "$RELEASE_DIR" \
+  --distpath "$PLATFORM_DIR" \
   --workpath "build/_pyinstaller" \
   --specpath "build" \
   backup_gui.py
 
 # ── 4. Stamp version ─────────────────────────────────────────────────────────
-echo "$VERSION" > "$RELEASE_DIR/VERSION"
+echo "$VERSION" > "releases/$VERSION/VERSION"
 
 echo ""
 echo "[4/4] Done."
 echo ""
-ls -lh "$RELEASE_DIR/"
+ls -lh "$PLATFORM_DIR/"
 
 if [[ "$OS" == "Darwin" ]]; then
   echo ""
   echo "macOS note: Gatekeeper may block unsigned apps on first launch."
-  echo "To allow, run once:  xattr -cr \"$RELEASE_DIR/PigmyBackup.app\""
+  echo "To allow, run once:  xattr -cr \"$PLATFORM_DIR/PigmyBackup\""
 fi

@@ -11,17 +11,20 @@ permissions:
 jobs:
   # ── Build on each platform in parallel ──────────────────────────────────────
   build:
-    name: Build (${{ matrix.os }})
+    name: Build (${{ matrix.platform_dir }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false   # let all three platforms finish even if one fails
       matrix:
         include:
           - os: ubuntu-latest
+            platform_dir: linux
             artifact_name: PigmyBackup-linux
           - os: windows-latest
+            platform_dir: windows
             artifact_name: PigmyBackup-windows
           - os: macos-latest
+            platform_dir: macos
             artifact_name: PigmyBackup-macos
 
     steps:
@@ -45,32 +48,25 @@ jobs:
       - name: Run tests
         run: python -m unittest discover -s tests -v
 
+      # Output goes directly into dist/<os>/ so the folder structure mirrors
+      # the local build scripts: releases/<version>/<os>/PigmyBackup[.exe]
       - name: Build with PyInstaller
         shell: bash
         run: |
-          pyinstaller \
+          python -m PyInstaller \
             --onefile \
             --windowed \
             --name PigmyBackup \
-            --distpath dist \
+            --distpath dist/${{ matrix.platform_dir }} \
             --workpath build/_pyinstaller \
             --specpath build \
             backup_gui.py
-
-      # Give each binary a platform suffix so all three can coexist in one release
-      - name: Rename binary for platform
-        shell: bash
-        run: |
-          if   [ "$RUNNER_OS" = "Windows" ]; then mv dist/PigmyBackup.exe dist/PigmyBackup-windows.exe
-          elif [ "$RUNNER_OS" = "macOS"   ]; then mv dist/PigmyBackup     dist/PigmyBackup-macos
-          else                                    mv dist/PigmyBackup     dist/PigmyBackup-linux
-          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: dist/
+          path: dist/${{ matrix.platform_dir }}/
           if-no-files-found: error
 
   # ── Collect artifacts and publish a GitHub Release ──────────────────────────
@@ -91,10 +87,20 @@ jobs:
           echo "tag=v${VERSION}-${SHA}"                 >> "$GITHUB_OUTPUT"
           echo "name=Pigmy Backup v${VERSION} (${SHA})" >> "$GITHUB_OUTPUT"
 
+      # Downloads into artifacts/<artifact_name>/<os>/PigmyBackup[.exe]
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts/
+
+      # Rename to add platform suffix before attaching to the release so that
+      # all three files have distinct names in the flat GitHub Release asset list
+      - name: Prepare release assets
+        run: |
+          mkdir -p release_assets
+          cp artifacts/PigmyBackup-linux/PigmyBackup       release_assets/PigmyBackup-linux
+          cp artifacts/PigmyBackup-windows/PigmyBackup.exe  release_assets/PigmyBackup-windows.exe
+          cp artifacts/PigmyBackup-macos/PigmyBackup        release_assets/PigmyBackup-macos
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -114,8 +120,5 @@ jobs:
 
             > **Windows:** SmartScreen may warn on first launch — click *More info → Run anyway*.
             > **macOS:** If Gatekeeper blocks it, run `xattr -cr PigmyBackup-macos` once in a terminal.
-          files: |
-            artifacts/PigmyBackup-linux/PigmyBackup-linux
-            artifacts/PigmyBackup-windows/PigmyBackup-windows.exe
-            artifacts/PigmyBackup-macos/PigmyBackup-macos
+          files: release_assets/*
           fail_on_unmatched_files: true
