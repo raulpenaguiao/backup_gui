@@ -1,5 +1,7 @@
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -98,7 +100,10 @@ class TestIndexVaultSkipped(unittest.TestCase):
         all_paths = [p for groups in pigmyhash.values() for g in groups for p in g]
         self.assertTrue(any("a.txt" in p for p in all_paths))
 
-    @unittest.skipIf(os.getuid() == 0, "root can read any file — chmod test meaningless")
+    @unittest.skipIf(
+        not hasattr(os, "getuid") or os.getuid() == 0,
+        "Windows or root — chmod permission test not applicable",
+    )
     def test_unreadable_file_triggers_real_os_error(self):
         """Remove read permission on a file and confirm index_vault skips it."""
         self._write("ok.txt", b"readable")
@@ -115,6 +120,32 @@ class TestIndexVaultSkipped(unittest.TestCase):
         # The readable file must still be indexed
         all_paths = [p for groups in pigmyhash.values()
                      for g in groups for p in g]
+        self.assertTrue(any("ok" in p for p in all_paths),
+                        "Readable file should still appear in pigmyhash")
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows icacls permission test")
+    def test_unreadable_file_triggers_real_os_error_windows(self):
+        """Deny read access via icacls (Windows ACL) and confirm index_vault skips the file."""
+        self._write("ok.txt", b"readable")
+        locked = self._write("locked_win.txt", b"cannot read this")
+        username = os.environ.get("USERNAME", "")
+        subprocess.run(
+            ["icacls", locked, "/deny", f"{username}:(R)"],
+            check=True, capture_output=True,
+        )
+        try:
+            pigmyhash, skipped = index_vault(self.tmp)
+        finally:
+            subprocess.run(
+                ["icacls", locked, "/remove:d", username],
+                check=True, capture_output=True,
+            )
+        skipped_paths = [p for p, _ in skipped]
+        self.assertTrue(
+            any("locked_win" in p for p in skipped_paths),
+            f"Expected locked_win.txt in skipped, got: {skipped_paths}",
+        )
+        all_paths = [p for groups in pigmyhash.values() for g in groups for p in g]
         self.assertTrue(any("ok" in p for p in all_paths),
                         "Readable file should still appear in pigmyhash")
 

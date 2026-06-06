@@ -3,6 +3,14 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import tools_library.tracer as tracer
 from tools_library.file_tree import human_size
+
+def _read_version():
+    try:
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(here, "VERSION")) as f:
+            return f.read().strip()
+    except Exception:
+        return "unknown"
 from tools_library.vault_operations import (
     delete_empty_folders, get_repetitions, get_folder_repetitions,
     is_external_inside_vault,
@@ -39,6 +47,7 @@ class MainWindow:
         self.frame.pack(fill=tk.BOTH, expand=True)
         self.frame.columnconfigure(0, weight=1)
         self.frame.rowconfigure(6, weight=1)  # content area row expands
+        self.frame.rowconfigure(8, weight=0)  # footer
 
         # Row 0 — header
         hdr = tk.Frame(self.frame, pady=6, padx=10)
@@ -126,6 +135,16 @@ class MainWindow:
         self._build_results_area(results_frame)
 
         self._active_panel = None  # currently shown tool panel (or None = tree)
+
+        # Row 7 — footer separator + version/copyright
+        ttk.Separator(self.frame, orient=tk.HORIZONTAL).grid(
+            row=7, column=0, sticky="ew")
+        version = _read_version()
+        footer = tk.Frame(self.frame, padx=10, pady=3)
+        footer.grid(row=8, column=0, sticky="ew")
+        tk.Label(footer,
+                 text=f"Pigmy Backup v{version}   © 2024–2026 Raul Penaguiao   Apache 2.0",
+                 fg="#888", font=("Helvetica", 8)).pack(side=tk.RIGHT)
 
     # ── Panel switching ───────────────────────────────────────────────────────
 
