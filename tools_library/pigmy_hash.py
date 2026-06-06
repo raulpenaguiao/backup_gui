@@ -12,21 +12,28 @@ _SKIP_NAMES = {drive_variables.pigmy_hash_file, drive_variables.kept_file,
 
 
 def compute_file_hash(file_path):
+    h, _ = _hash_file(file_path)
+    return h
+
+
+def _hash_file(file_path):
+    """Return (hash_str, None) on success or (None, error_str) on failure."""
     try:
         size = os.path.getsize(file_path)
         with open(file_path, "rb") as f:
             if size < 1_000:
-                return hashlib.md5(f.read()).hexdigest()
+                return hashlib.md5(f.read()).hexdigest(), None
             elif size < 1_000_000:
-                return hashlib.sha1(f.read()).hexdigest()
+                return hashlib.sha1(f.read()).hexdigest(), None
             else:
                 start = f.read(1_000_000)
                 f.seek(-1_000_000, 2)
                 end = f.read(1_000_000)
-                return hashlib.sha256(start + end).hexdigest()
+                return hashlib.sha256(start + end).hexdigest(), None
     except Exception as e:
-        tracer.log(f"Error hashing {file_path}: {e}")
-        return None
+        err = str(e)
+        tracer.log(f"Cannot hash {file_path!r}: {err}")
+        return None, err
 
 
 def _compute_folder_hash(child_hashes):
@@ -39,9 +46,14 @@ def index_vault(vault_path, progress_tracker=None, cancel_token=None):
     BFS enumeration (Phase 1) then bottom-up hash computation (Phase 2+3).
     Phase 1 drives progress_tracker.bfs_progress from 0.0 -> 1.0.
     Phase 2+3 use progress_tracker.current_value / total_value.
-    Returns pigmyhash or None if cancelled.
+
+    Returns (pigmyhash, skipped) on success, or (None, skipped) if cancelled.
+      skipped: list of (path, error_str) for every file/dir that could not be read.
+    Folders that contain any skipped file are tainted — they are excluded from
+    duplicate matching so they can never be falsely suggested for deletion.
     """
     pigmy_hash_path = os.path.join(vault_path, drive_variables.pigmy_hash_file)
+    skipped = []   # (path, error_str)
 
     # ── Phase 1: BFS enumeration with running progress estimate ──────────────
     all_files = []
@@ -56,7 +68,7 @@ def index_vault(vault_path, progress_tracker=None, cancel_token=None):
 
     while queue:
         if cancel_token and cancel_token.is_set():
-            return None
+            return None, skipped
 
         current = queue.popleft()
         dirs_processed += 1
@@ -64,7 +76,10 @@ def index_vault(vault_path, progress_tracker=None, cancel_token=None):
 
         try:
             entries = sorted(os.scandir(current), key=lambda e: e.name)
-        except PermissionError:
+        except OSError as e:
+            err = str(e)
+            tracer.log(f"Cannot scan directory {current!r}: {err}")
+            skipped.append((current, err))
             continue
 
         for entry in entries:
@@ -82,12 +97,10 @@ def index_vault(vault_path, progress_tracker=None, cancel_token=None):
         if progress_tracker:
             bfs_total = dirs_processed + dirs_in_queue
             progress_tracker.bfs_progress = dirs_processed / bfs_total if bfs_total else 1.0
-            # Estimate total entries using avg files-per-dir so far
             avg_files = len(all_files) / max(dirs_processed, 1)
             est_total = int((dirs_processed + dirs_in_queue) * (1 + avg_files))
             found_so_far = len(all_files) + dirs_processed
             progress_tracker.current_file = current
-            # Expose estimate for the label
             progress_tracker._scan_found = found_so_far
             progress_tracker._scan_estimate = max(est_total, found_so_far + 1)
 
@@ -98,34 +111,54 @@ def index_vault(vault_path, progress_tracker=None, cancel_token=None):
         progress_tracker.start_progress_tracker(total)
 
     path_to_hash = {}
+    skipped_paths = set()   # paths that could not be read — used to taint parent dirs
     processed = 0
 
     for file_path in all_files:
         if cancel_token and cancel_token.is_set():
-            return None
+            return None, skipped
         if progress_tracker:
             progress_tracker.set_current_value(processed, current_file=file_path)
-        h = compute_file_hash(file_path)
+        h, err = _hash_file(file_path)
         if h is not None:
             path_to_hash[file_path] = h
+        else:
+            skipped.append((file_path, err or "unknown error"))
+            skipped_paths.add(file_path)
         processed += 1
 
     # ── Phase 3: Hash folders bottom-up (reversed BFS = leaves before parents) ──
+    # A folder is "tainted" if it contains any skipped file or tainted subfolder.
+    # Tainted folders are excluded from path_to_hash so they can never be matched
+    # as duplicates — protecting them from accidental deletion.
+    tainted_dirs = set()
+
     for folder_path in reversed(all_dirs_bfs):
         if cancel_token and cancel_token.is_set():
-            return None
+            return None, skipped
         if progress_tracker:
             progress_tracker.set_current_value(processed, current_file=folder_path)
         try:
             child_hashes = []
+            is_tainted = False
             for entry in os.scandir(folder_path):
                 if entry.name in _SKIP_NAMES:
                     continue
+                if entry.path in skipped_paths or entry.path in tainted_dirs:
+                    is_tainted = True
+                    break
                 if entry.path in path_to_hash:
                     child_hashes.append(path_to_hash[entry.path])
-            path_to_hash[folder_path] = _compute_folder_hash(child_hashes)
-        except Exception as e:
-            tracer.log(f"Error hashing folder {folder_path}: {e}")
+            if is_tainted:
+                tainted_dirs.add(folder_path)
+                tracer.log(f"Folder tainted (contains unreadable content): {folder_path!r}")
+            else:
+                path_to_hash[folder_path] = _compute_folder_hash(child_hashes)
+        except OSError as e:
+            err = str(e)
+            tracer.log(f"Cannot hash folder {folder_path!r}: {err}")
+            skipped.append((folder_path, err))
+            tainted_dirs.add(folder_path)
         processed += 1
 
     # ── Phase 4: Group by hash, then by bit-by-bit identity ──────────────────
@@ -147,7 +180,10 @@ def index_vault(vault_path, progress_tracker=None, cancel_token=None):
                 groups.append([path])
         pigmyhash[h] = groups
 
-    return pigmyhash
+    if skipped:
+        tracer.log(f"Indexing complete: {len(skipped)} file(s)/dir(s) skipped due to access errors.")
+
+    return pigmyhash, skipped
 
 
 def _same_content(path1, path2):

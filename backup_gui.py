@@ -1,5 +1,6 @@
 import os
 import tkinter as tk
+from tkinter import messagebox
 import threading
 import tools_library.drive_variables as drive_variables
 from tools_library.dbs import initialize_vaults, get_saved_vaults
@@ -39,10 +40,11 @@ class App:
 
         def run():
             try:
+                skipped = []
                 if has_hash:
                     pigmyhash = load_pigmy_hash(vault_path)
                 else:
-                    pigmyhash = index_vault(vault_path, progress_tracker, cancel_token)
+                    pigmyhash, skipped = index_vault(vault_path, progress_tracker, cancel_token)
                     if pigmyhash is None:
                         self.root.after(0, lambda: self._on_cancelled(loading))
                         return
@@ -51,7 +53,8 @@ class App:
                 if cancel_token.is_set():
                     self.root.after(0, lambda: self._on_cancelled(loading))
                     return
-                self.root.after(0, lambda: self._on_ready(loading, vault_path, pigmyhash, sizes, file_counts))
+                self.root.after(0, lambda: self._on_ready(
+                    loading, vault_path, pigmyhash, sizes, file_counts, skipped))
             except Exception as e:
                 tracer.log(f"Error opening vault: {e}")
                 self.root.after(0, loading.destroy)
@@ -65,7 +68,7 @@ class App:
 
         def run():
             try:
-                pigmyhash = index_vault(vault_path, progress_tracker, cancel_token)
+                pigmyhash, skipped = index_vault(vault_path, progress_tracker, cancel_token)
                 if pigmyhash is None:
                     self.root.after(0, lambda: self._on_cancelled(loading))
                     return
@@ -74,7 +77,8 @@ class App:
                 if cancel_token.is_set():
                     self.root.after(0, lambda: self._on_cancelled(loading))
                     return
-                self.root.after(0, lambda: self._on_ready(loading, vault_path, pigmyhash, sizes, file_counts))
+                self.root.after(0, lambda: self._on_ready(
+                    loading, vault_path, pigmyhash, sizes, file_counts, skipped))
             except Exception as e:
                 tracer.log(f"Error reindexing vault: {e}")
                 self.root.after(0, loading.destroy)
@@ -85,7 +89,7 @@ class App:
         loading.destroy()
         self._show_vault_picker()
 
-    def _on_ready(self, loading, vault_path, pigmyhash, sizes, file_counts):
+    def _on_ready(self, loading, vault_path, pigmyhash, sizes, file_counts, skipped=None):
         loading.destroy()
         if self._view:
             self._view.destroy()
@@ -94,6 +98,28 @@ class App:
             on_back=self._show_vault_picker,
             on_reindex=lambda: self._reindex_vault(vault_path),
         )
+        if skipped:
+            self._show_skipped_warning(skipped)
+
+    def _show_skipped_warning(self, skipped):
+        n = len(skipped)
+        MAX_SHOWN = 20
+        lines = []
+        for path, err in skipped[:MAX_SHOWN]:
+            lines.append(f"  {path}\n    → {err}")
+        if n > MAX_SHOWN:
+            lines.append(f"  … and {n - MAX_SHOWN} more (see log for full list)")
+
+        msg = (
+            f"{n} file(s) or folder(s) could not be read during indexing "
+            f"and were skipped.\n\n"
+            f"These items will NOT appear in duplicate comparisons, and their "
+            f"parent folders are protected from deletion suggestions.\n\n"
+            f"Skipped items:\n" + "\n".join(lines) +
+            f"\n\nCheck the log (Open Logs button) for full details."
+        )
+        messagebox.showwarning("Indexing incomplete — some files skipped", msg,
+                               parent=self.root)
 
 
 def create_gui():
