@@ -7,6 +7,7 @@ from unittest import mock
 
 from tools_library.vault_operations import (
     get_repetitions, is_external_inside_vault, filter_external_vault,
+    scan_external_vault,
 )
 from tools_library.pigmy_hash import compute_file_hash
 
@@ -160,6 +161,78 @@ class TestFilterExternalVault(unittest.TestCase):
             result = filter_external_vault({}, self.ext)
         m.assert_not_called()
         self.assertEqual(result, [])
+
+
+class TestScanExternalVault(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.vault = os.path.join(self.tmp, "vault")
+        self.ext = os.path.join(self.tmp, "external")
+        os.makedirs(self.vault)
+        os.makedirs(self.ext)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+
+    def _write(self, base, relpath, content):
+        full = os.path.join(base, relpath)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "wb") as f:
+            f.write(content)
+        return full
+
+    def test_returns_empty_when_no_match(self):
+        self._write(self.ext, "a.txt", b"unique")
+        all_files, matched = scan_external_vault({}, self.ext)
+        self.assertEqual(len(all_files), 1)
+        self.assertEqual(matched, [])
+
+    def test_returns_match_without_deleting(self):
+        vault_f = self._write(self.vault, "doc.txt", b"same content")
+        ext_f = self._write(self.ext, "doc.txt", b"same content")
+        h = compute_file_hash(vault_f)
+        pigmyhash = {h: [[vault_f]]}
+        all_files, matched = scan_external_vault(pigmyhash, self.ext)
+        self.assertIn(ext_f, matched)
+        self.assertTrue(os.path.exists(ext_f), "scan must not delete files")
+
+    def test_different_content_not_matched(self):
+        vault_f = self._write(self.vault, "doc.txt", b"vault content")
+        self._write(self.ext, "doc.txt", b"different content")
+        h = compute_file_hash(vault_f)
+        pigmyhash = {h: [[vault_f]]}
+        _, matched = scan_external_vault(pigmyhash, self.ext)
+        self.assertEqual(matched, [])
+
+    def test_stop_event_halts_scan(self):
+        for i in range(5):
+            self._write(self.ext, f"f{i}.txt", f"content {i}".encode())
+        stop = threading.Event()
+        stop.set()
+        all_files, matched = scan_external_vault({}, self.ext, stop_event=stop)
+        self.assertEqual(matched, [])
+
+    def test_match_callback_called(self):
+        vault_f = self._write(self.vault, "cb.txt", b"callback content")
+        self._write(self.ext, "cb.txt", b"callback content")
+        h = compute_file_hash(vault_f)
+        pigmyhash = {h: [[vault_f]]}
+        cb_calls = []
+        scan_external_vault(pigmyhash, self.ext, match_callback=lambda p: cb_calls.append(p))
+        self.assertEqual(len(cb_calls), 1)
+
+    def test_progress_callback_called(self):
+        self._write(self.ext, "p.txt", b"progress test")
+        calls = []
+        scan_external_vault({}, self.ext, progress_callback=lambda c, t: calls.append((c, t)))
+        self.assertGreater(len(calls), 0)
+        self.assertEqual(calls[-1][0], calls[-1][1])
+
+    def test_all_files_list_complete(self):
+        for i in range(4):
+            self._write(self.ext, f"f{i}.txt", b"data")
+        all_files, _ = scan_external_vault({}, self.ext)
+        self.assertEqual(len(all_files), 4)
 
 
 if __name__ == "__main__":

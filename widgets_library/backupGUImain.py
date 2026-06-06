@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 from tkinter import Menu
+import platform
 import tools_library.toolbox as toolbox
 import tools_library.tracer as tracer
 import os
@@ -11,6 +12,24 @@ import send2trash
 import tools_library.file_manager as file_manager
 from widgets_library.loading_popup import LoadingPopup
 from tools_library.progress_tracker import ProgressTracker
+import data_clean
+
+
+def _set_busy_cursor(*widgets):
+    name = "watch" if platform.system() != "Windows" else "wait"
+    for w in widgets:
+        try:
+            w.config(cursor=name)
+        except Exception:
+            pass
+
+
+def _clear_cursor(*widgets):
+    for w in widgets:
+        try:
+            w.config(cursor="")
+        except Exception:
+            pass
 
 
 def get_text_field(text_field):
@@ -18,6 +37,32 @@ def get_text_field(text_field):
     if not os.path.isdir(path):
         raise ValueError(f"Error 93182: Path '{path}' does not exist or is not a directory")
     return path
+
+
+class _Tooltip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self._tip = None
+        widget.bind("<Enter>", self._show)
+        widget.bind("<Leave>", self._hide)
+
+    def _show(self, _event=None):
+        if self._tip:
+            return
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self._tip = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        tk.Label(tw, text=self.text, background="#ffffe0", relief="solid",
+                 borderwidth=1, wraplength=320, justify="left",
+                 font=("Arial", 9)).pack(ipadx=4, ipady=2)
+
+    def _hide(self, _event=None):
+        if self._tip:
+            self._tip.destroy()
+            self._tip = None
 
 
 class BackupGUI:
@@ -40,24 +85,35 @@ class BackupGUI:
         buttonIndexDatabase = tk.Button(root.rootTK, text="Index Database")
         buttonIndexDatabase.grid(row=0, column=0, padx=12, pady=12, sticky="nw")
         buttonIndexDatabase.config(command=root.buttonCreateDatabase_click)
+        _Tooltip(buttonIndexDatabase,
+                 "Scans every file in the selected drive and builds a database storing each "
+                 "file's checksum, size, extension, and timestamps. This must be run before "
+                 "any other action can be performed on this drive.")
         root.buttonIndexDatabase = buttonIndexDatabase
 
         # Top center: Dropdown box with values from drive_variables.drives
         dropdownDrives = ttk.Combobox(root.rootTK)
         dropdownDrives.grid(row=0, column=1, padx=12, pady=12, sticky="nwe")
         dropdownDrives.config(width=75)
-        dropdownDrives.set('') 
+        dropdownDrives.set('')
         root.dropdownDrives = dropdownDrives
 
         # Top right: Buttons "add drive" and "remove drive"
         buttonAddDrive = tk.Button(root.rootTK, text="Add Drive")
         buttonAddDrive.grid(row=0, column=2, padx=5, pady=5, sticky="e")
         buttonAddDrive.config(command=root.buttonAddDriveLocation_click)
+        _Tooltip(buttonAddDrive,
+                 "Register a new folder or drive path with this application. "
+                 "The path must already exist on your filesystem. "
+                 "Once added it will appear in the drive dropdown.")
         root.buttonAddDrive = buttonAddDrive
 
         buttonRemoveDrive = tk.Button(root.rootTK, text="Remove Drive")
         buttonRemoveDrive.grid(row=0, column=3, padx=5, pady=5, sticky="e")
         buttonRemoveDrive.config(command=root.buttonRemoveDrive_click)
+        _Tooltip(buttonRemoveDrive,
+                 "Remove the currently selected drive from the application's list. "
+                 "No files are deleted — this only unregisters the drive path.")
         root.buttonRemoveDrive = buttonRemoveDrive
         #endregion
 
@@ -72,17 +128,40 @@ class BackupGUI:
         buttonDBCopies = tk.Button(root.rootTK, text="Analyse copies from database")
         buttonDBCopies.grid(row=2, column=0, padx=12, pady=12, sticky="nw")
         buttonDBCopies.config(command=root.buttonDBCopies_click)
+        _Tooltip(buttonDBCopies,
+                 "Reads the drive's database and finds every group of files that share "
+                 "identical content (same checksum). Opens an interactive dialog for each "
+                 "duplicate group so you can choose to keep one copy, keep all, or delete all.")
         root.buttonDBCopies = buttonDBCopies
 
         buttonCreateUniques = tk.Button(root.rootTK, text="Create unique files")
         buttonCreateUniques.grid(row=3, column=0, padx=12, pady=12, sticky="nw")
         buttonCreateUniques.config(command=root.buttonCreateUniques_click)
+        _Tooltip(buttonCreateUniques,
+                 "Compare a second folder against the selected drive's database and copy "
+                 "over only the files that do not already exist in the backup. "
+                 "Useful for merging new content without introducing duplicates.")
         root.buttonCreateUniques = buttonCreateUniques
-        
+
         buttonCreateStatistics = tk.Button(root.rootTK, text="Create statistics")
         buttonCreateStatistics.grid(row=4, column=0, padx=12, pady=12, sticky="nw")
         buttonCreateStatistics.config(command=root.buttonCreateStatistics_click)
+        _Tooltip(buttonCreateStatistics,
+                 "Generate visual charts from the drive's database: file extension breakdown, "
+                 "file size distribution, number-of-copies histogram, and file creation time "
+                 "distribution. Charts are displayed in the panel and saved to the drive's "
+                 "info folder.")
         root.buttonCreateStatistics = buttonCreateStatistics
+
+        buttonCleanFiles = tk.Button(root.rootTK, text="Clean files")
+        buttonCleanFiles.grid(row=5, column=0, padx=12, pady=12, sticky="nw")
+        buttonCleanFiles.config(command=root.buttonCleanFiles_click)
+        _Tooltip(buttonCleanFiles,
+                 "Remove junk files from the selected drive. You can choose which file "
+                 "extensions to target (e.g. .log, .tmp, .bak), specific folder names to "
+                 "delete entirely, and optionally remove all empty folders. "
+                 "A confirmation dialog lets you review and adjust every option before anything is deleted.")
+        root.buttonCleanFiles = buttonCleanFiles
         #endregion
 
         #region panel
@@ -134,14 +213,16 @@ class BackupGUI:
     #region Button click functions
     def buttonCreateDatabase_click(root):
         tracer.log("")
+        loading_popup = None
         try:
-            root.rootTK.config(cursor="wait")
-            # Create and show loading popup
+            _set_busy_cursor(root.rootTK)
+            root.rootTK.update_idletasks()  # flush cursor change before heavy work starts
             progress_tracker = ProgressTracker(name="File Listing", unit="files")
             tracer.log(progress_tracker.name)
             tracer.log(progress_tracker.unit)
             tracer.log(progress_tracker.loaded)
             loading_popup = LoadingPopup(root.rootTK, progress_tracker)
+            _set_busy_cursor(loading_popup.popup)  # propagate to popup window
             tracer.log("")
             root.rootTK.update()
 
@@ -154,8 +235,9 @@ class BackupGUI:
         except Exception as e:
             tracer.log(f"An error occurred {e}")
         finally:
-            loading_popup.popup.destroy()
-            root.rootTK.config(cursor="")
+            if loading_popup is not None:
+                loading_popup.popup.destroy()
+            _clear_cursor(root.rootTK)
 
     def buttonAddDriveLocation_click(root):
         tracer.log("")
@@ -446,5 +528,135 @@ class BackupGUI:
             tracer.log(f"Error 83101: {e}")
     #endregion
     
+    def buttonCleanFiles_click(root):
+        tracer.log("")
+        try:
+            popup = tk.Toplevel(root.rootTK)
+            popup.title("Clean Files")
+            popup.geometry("480x580")
+            popup.resizable(True, True)
+
+            outer = ttk.Frame(popup, padding=12)
+            outer.pack(fill=tk.BOTH, expand=True)
+
+            tk.Label(outer, text="Clean Files", font=("Arial", 14, "bold")).pack(anchor="w")
+            tk.Label(outer, text="Select what to remove from the chosen drive.",
+                     font=("Arial", 9), foreground="#555555").pack(anchor="w", pady=(0, 8))
+
+            ttk.Separator(outer, orient="horizontal").pack(fill=tk.X, pady=(0, 8))
+
+            # ── Extensions ──────────────────────────────────────────────────
+            tk.Label(outer, text="File extensions to delete:", font=("Arial", 10, "bold")).pack(anchor="w")
+
+            ext_canvas = tk.Canvas(outer, height=140, borderwidth=1, relief="sunken")
+            ext_scrollbar = ttk.Scrollbar(outer, orient="vertical", command=ext_canvas.yview)
+            ext_inner = ttk.Frame(ext_canvas)
+            ext_inner.bind("<Configure>",
+                           lambda e: ext_canvas.configure(scrollregion=ext_canvas.bbox("all")))
+            ext_canvas.create_window((0, 0), window=ext_inner, anchor="nw")
+            ext_canvas.configure(yscrollcommand=ext_scrollbar.set)
+            ext_canvas.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            ext_scrollbar.pack(side=tk.LEFT, fill=tk.Y)
+
+            ext_vars = {}
+
+            def _add_ext_row(ext):
+                var = tk.BooleanVar(value=True)
+                ext_vars[ext] = var
+                tk.Checkbutton(ext_inner, text=ext, variable=var).pack(anchor="w", padx=6)
+
+            for ext in sorted(data_clean.DEFAULT_DELETE_EXTENSIONS):
+                _add_ext_row(ext)
+
+            ext_add_frame = ttk.Frame(outer)
+            ext_add_frame.pack(fill=tk.X, pady=4)
+            ext_entry = tk.Entry(ext_add_frame, width=18)
+            ext_entry.pack(side=tk.LEFT, padx=(0, 4))
+            ext_entry.insert(0, ".ext")
+
+            def _add_extension():
+                raw = ext_entry.get().strip()
+                if not raw or raw == ".ext":
+                    return
+                ext = raw if raw.startswith('.') else f'.{raw}'
+                if ext not in ext_vars:
+                    _add_ext_row(ext)
+                    ext_canvas.configure(scrollregion=ext_canvas.bbox("all"))
+                ext_entry.delete(0, tk.END)
+
+            tk.Button(ext_add_frame, text="Add extension", command=_add_extension).pack(side=tk.LEFT)
+
+            ttk.Separator(outer, orient="horizontal").pack(fill=tk.X, pady=8)
+
+            # ── Empty folders ────────────────────────────────────────────────
+            delete_empty_var = tk.BooleanVar(value=False)
+            tk.Checkbutton(outer, text="Delete empty folders",
+                           variable=delete_empty_var).pack(anchor="w")
+
+            ttk.Separator(outer, orient="horizontal").pack(fill=tk.X, pady=8)
+
+            # ── Folder names ─────────────────────────────────────────────────
+            tk.Label(outer, text="Folder names to delete entirely:", font=("Arial", 10, "bold")).pack(anchor="w")
+
+            folder_listbox = tk.Listbox(outer, height=5, selectmode=tk.EXTENDED)
+            folder_listbox.pack(fill=tk.X, pady=4)
+            for d in sorted(data_clean.DEFAULT_DELETE_DIRS):
+                folder_listbox.insert(tk.END, d)
+
+            folder_btn_frame = ttk.Frame(outer)
+            folder_btn_frame.pack(fill=tk.X)
+            folder_entry = tk.Entry(folder_btn_frame, width=22)
+            folder_entry.pack(side=tk.LEFT, padx=(0, 4))
+
+            def _add_folder():
+                name = folder_entry.get().strip()
+                if name:
+                    folder_listbox.insert(tk.END, name)
+                    folder_entry.delete(0, tk.END)
+
+            def _remove_folder():
+                for i in reversed(folder_listbox.curselection()):
+                    folder_listbox.delete(i)
+
+            tk.Button(folder_btn_frame, text="Add", command=_add_folder).pack(side=tk.LEFT, padx=(0, 4))
+            tk.Button(folder_btn_frame, text="Remove selected", command=_remove_folder).pack(side=tk.LEFT)
+
+            ttk.Separator(outer, orient="horizontal").pack(fill=tk.X, pady=8)
+
+            # ── Action buttons ───────────────────────────────────────────────
+            action_frame = ttk.Frame(outer)
+            action_frame.pack(fill=tk.X)
+
+            def _run_clean():
+                try:
+                    path = root.dropdownDrives.get()
+                    if not os.path.isdir(path):
+                        tracer.log(f"Clean aborted: invalid path '{path}'")
+                        return
+                    selected_exts = {ext for ext, var in ext_vars.items() if var.get()}
+                    selected_folders = set(folder_listbox.get(0, tk.END))
+                    popup.destroy()
+                    _set_busy_cursor(root.rootTK)
+                    root.rootTK.update()
+                    freed = data_clean.clean(
+                        path,
+                        extensions=selected_exts,
+                        folder_names=selected_folders,
+                        delete_empty_folders=delete_empty_var.get()
+                    )
+                    tracer.log(f"Clean finished. Freed: {data_clean.format_size(freed)}")
+                except Exception as e:
+                    tracer.log(f"Error 72502: {e}")
+                finally:
+                    _clear_cursor(root.rootTK)
+
+            tk.Button(action_frame, text="Cancel", command=popup.destroy).pack(side=tk.RIGHT, padx=(4, 0))
+            tk.Button(action_frame, text="Run Clean", command=_run_clean,
+                      bg="#c0392b", fg="white", activebackground="#922b21",
+                      activeforeground="white").pack(side=tk.RIGHT)
+
+        except Exception as e:
+            tracer.log(f"Error 72501: {e}")
+
     def mainloop(root):
         root.rootTK.mainloop()

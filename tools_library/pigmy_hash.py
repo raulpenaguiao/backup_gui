@@ -7,7 +7,8 @@ import tools_library.tracer as tracer
 from tools_library.progress_tracker import ProgressTracker
 import tools_library.drive_variables as drive_variables
 
-_SKIP_NAMES = {drive_variables.pigmy_hash_file, drive_variables.kept_file, ".pigmy"}
+_SKIP_NAMES = {drive_variables.pigmy_hash_file, drive_variables.kept_file,
+               drive_variables.rules_file, ".pigmy"}
 
 
 def compute_file_hash(file_path):

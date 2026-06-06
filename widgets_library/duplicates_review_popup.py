@@ -6,6 +6,7 @@ from tkinter import ttk, messagebox
 import send2trash
 import tools_library.tracer as tracer
 from tools_library import kept_files
+from tools_library.duplicate_rules import load_rules, apply_rules, net_action
 from widgets_library.tooltip import Tooltip
 from PIL import Image, ImageTk
 
@@ -54,14 +55,19 @@ def _open_in_explorer(path, is_dir=False):
 
 class DuplicatesReviewPopup:
     """
-    Unified popup that reviews duplicate folder pairs first (sorted by size desc),
+    Embedded panel that reviews duplicate folder pairs first (sorted by size desc),
     then duplicate file groups (sorted by size desc).
 
     Deletions are QUEUED — nothing is sent to the recycle bin until the user
     confirms via the Report window or the Leave confirmation dialog.
+
+    parent: tk.Frame to build into (no Toplevel is created).
+    root: root window, used for child dialogs and messagebox parents.
+    on_close: called when the user clicks Leave / finishes reviewing.
     """
 
-    def __init__(self, root, folder_pairs, file_groups, sizes, vault_path="", pigmyhash=None):
+    def __init__(self, parent, root, folder_pairs, file_groups, sizes,
+                 vault_path="", pigmyhash=None, on_close=None):
         folder_items = sorted(
             [{"type": "folder", "paths": list(p)} for p in folder_pairs],
             key=lambda x: sizes.get(x["paths"][0], 0),
@@ -76,6 +82,8 @@ class DuplicatesReviewPopup:
         self._index = 0
         self._sizes = sizes
         self._vault_path = vault_path.rstrip(os.sep)
+        self._root = root
+        self._on_close_cb = on_close
         # Each entry: {"label": str, "deleted": [paths], "original_item": dict}
         self._pending = []
         # Build reverse map path -> hash from pigmyhash for "always keep" lookups
@@ -87,15 +95,17 @@ class DuplicatesReviewPopup:
                         self._path_to_hash[os.path.normpath(p)] = h
         # Load persisted keep list for this vault
         self._kept = kept_files.load_kept(self._vault_path) if self._vault_path else set()
+        # Load per-vault duplicate rules
+        self._rules = load_rules(self._vault_path) if self._vault_path else []
+
+        self.popup = parent  # the container frame (not a Toplevel)
 
         if not self._items:
+            tk.Label(self.popup, text="No duplicates found.",
+                     font=("Helvetica", 11), fg="#555").pack(padx=20, pady=40)
+            tk.Button(self.popup, text="← Back to Vault Tree",
+                      command=self._call_on_close).pack()
             return
-
-        self.popup = tk.Toplevel(root)
-        self.popup.title("Pigmy Backup Application")
-        self.popup.geometry("1200x720")
-        self.popup.minsize(800, 520)
-        self.popup.protocol("WM_DELETE_WINDOW", self._leave)
 
         tk.Label(self.popup, text="Review Duplicates",
                  font=("Helvetica", 15, "bold"), anchor="w").pack(fill=tk.X, padx=10, pady=(10, 0))
@@ -120,13 +130,36 @@ class DuplicatesReviewPopup:
         nav_bar.pack(fill=tk.X)
         self._nav_label = tk.Label(nav_bar, font=("Helvetica", 10, "bold"))
         self._nav_label.pack(side=tk.LEFT)
+
         btn_next = tk.Button(nav_bar, text="Next >", command=self._next, relief=tk.FLAT)
         btn_next.pack(side=tk.RIGHT)
+        Tooltip(btn_next, "Go to the next duplicate group.")
+
         btn_prev = tk.Button(nav_bar, text="< Prev", command=self._prev, relief=tk.FLAT)
         btn_prev.pack(side=tk.RIGHT, padx=(0, 4))
-        btn_leave = tk.Button(nav_bar, text="Leave", command=self._leave, relief=tk.FLAT)
+        Tooltip(btn_prev, "Go to the previous duplicate group.")
+
+        btn_leave = tk.Button(nav_bar, text="← Back to Vault Tree",
+                              command=self._leave, relief=tk.FLAT)
         btn_leave.pack(side=tk.RIGHT, padx=(0, 12))
-        Tooltip(btn_leave, "Stop reviewing. If there are staged deletions you will be asked to confirm before anything is deleted.")
+        Tooltip(btn_leave, "Stop reviewing and return to the vault tree. "
+                           "Staged deletions will NOT be executed unless you click "
+                           "Report / Execute first.")
+
+        btn_rules = tk.Button(nav_bar, text="Manage Rules",
+                              command=self._open_rules_manager, relief=tk.FLAT)
+        btn_rules.pack(side=tk.RIGHT, padx=(0, 4))
+        Tooltip(btn_rules, "Open the rules editor for this vault. Rules let you automatically "
+                           "pre-select or protect files based on their path, folder, or extension.")
+
+        self._btn_auto = tk.Button(nav_bar, text="Auto-apply Rules",
+                                   command=self._auto_apply_rules, relief=tk.FLAT,
+                                   state=tk.NORMAL if self._rules else tk.DISABLED)
+        self._btn_auto.pack(side=tk.RIGHT, padx=(0, 4))
+        Tooltip(self._btn_auto,
+                "Automatically stage all duplicate groups where rules give an "
+                "unambiguous verdict (no delete/keep conflict). Items with conflicts "
+                "or no matching rules are left for manual review.")
 
         # ── Staging bar: pending count / undo / report (persistent) ──────────
         self._staging_bar = tk.Frame(self.popup, bg="#f0f0f0", pady=4)
@@ -206,16 +239,31 @@ class DuplicatesReviewPopup:
         return (h, rel) in self._kept
 
     def _refresh_file_lb(self):
-        """Rebuild the file listbox in place, marking always-kept items."""
+        """Rebuild the file listbox, marking always-kept items and rule verdicts."""
         sel = list(self._file_lb.curselection())
         self._file_lb.delete(0, tk.END)
+        verdicts = getattr(self, "_rule_verdicts", {})
         for i, path in enumerate(self._file_paths):
             label = self._rel(path)
+            verdict = verdicts.get(path)
             if self._is_file_kept(path):
-                label += "  (kept)"
-            self._file_lb.insert(tk.END, label)
-            if self._is_file_kept(path):
+                label += "  [kept]"
+                self._file_lb.insert(tk.END, label)
                 self._file_lb.itemconfig(i, bg="#e8f5e9", fg="#1b5e20")
+            elif verdict == "delete":
+                label += "  [rule: delete]"
+                self._file_lb.insert(tk.END, label)
+                self._file_lb.itemconfig(i, bg="#fdecea", fg="#7a2e00")
+            elif verdict == "keep":
+                label += "  [rule: keep]"
+                self._file_lb.insert(tk.END, label)
+                self._file_lb.itemconfig(i, bg="#e8f5e9", fg="#1b5e20")
+            elif verdict == "conflict":
+                label += "  [rule: conflict — review manually]"
+                self._file_lb.insert(tk.END, label)
+                self._file_lb.itemconfig(i, bg="#fff3cd", fg="#6b4c00")
+            else:
+                self._file_lb.insert(tk.END, label)
         for i in sel:
             if i < len(self._file_paths):
                 self._file_lb.selection_set(i)
@@ -318,6 +366,71 @@ class DuplicatesReviewPopup:
         kept_files.save_kept(self._vault_path, self._kept)
         self._refresh_file_lb()
 
+    # ── Rules integration ─────────────────────────────────────────────────────
+
+    def _open_rules_manager(self):
+        from widgets_library.rules_manager import RulesManager
+        mgr = RulesManager(self._root, self._vault_path)
+        self._root.wait_window(mgr._win)
+        # Reload rules after the manager closes (user may have added/removed rules)
+        self._rules = load_rules(self._vault_path) if self._vault_path else []
+        self._btn_auto.config(state=tk.NORMAL if self._rules else tk.DISABLED)
+        # Refresh current item to reflect new rules
+        self._show_item()
+
+    def _auto_apply_rules(self):
+        """Stage all items where rules give an unambiguous verdict, skip the rest."""
+        if not self._rules:
+            return
+        auto_staged = 0
+        i = 0
+        while i < len(self._items):
+            item = self._items[i]
+            if item["type"] != "file":
+                i += 1
+                continue
+            paths = item["paths"]
+            raw = apply_rules(self._rules, paths, self._vault_path)
+            verdicts = {p: net_action(matches) for p, matches in raw.items()}
+
+            # Gather delete/keep sets, respecting always-keep
+            keep = {p for p in paths
+                    if self._is_file_kept(p) or verdicts.get(p) == "keep"}
+            to_delete = [p for p in paths
+                         if verdicts.get(p) == "delete" and p not in keep
+                         and os.path.exists(p)]
+            has_conflict = any(v == "conflict" for v in verdicts.values())
+            no_verdict = all(v is None for v in verdicts.values())
+
+            if has_conflict or no_verdict or not to_delete:
+                i += 1
+                continue
+
+            label = f"FILE (auto-rule) — delete {len(to_delete)}, keep {len(keep)}"
+            self._pending.append({"label": label,
+                                  "deleted": to_delete,
+                                  "original_item": dict(item)})
+            self._items.pop(i)
+            auto_staged += 1
+            # don't increment i — next item shifts into position i
+
+        self._update_pending_label()
+        if auto_staged:
+            tracer.log(f"Auto-apply rules: staged {auto_staged} item(s)")
+            if not self._items:
+                self._leave()
+                return
+            self._index = min(self._index, len(self._items) - 1)
+            self._show_item()
+        else:
+            from tkinter import messagebox
+            messagebox.showinfo(
+                "Auto-apply rules",
+                "No file groups had an unambiguous rule verdict.\n"
+                "All remaining items need manual review.",
+                parent=self._root,
+            )
+
     def _build_folder_buttons(self):
         b1 = tk.Button(self._btn_row, text="Stage: Keep Selected (delete others)",
                        command=self._queue_keep_folder)
@@ -374,6 +487,39 @@ class DuplicatesReviewPopup:
         tk.Label(list_frame, text="Files with identical content:",
                  font=("Helvetica", 9, "bold"), anchor="w").pack(fill=tk.X, padx=6, pady=(6, 2))
 
+        # Compute rule verdicts for this group
+        self._rule_verdicts = {}
+        if self._rules and self._vault_path:
+            raw = apply_rules(self._rules, paths, self._vault_path)
+            self._rule_verdicts = {p: net_action(matches) for p, matches in raw.items()}
+
+        # Rule banner — show when any file has a rule verdict
+        verdicts = set(self._rule_verdicts.values()) - {None}
+        if verdicts:
+            _BANNER_COLORS = {
+                "delete":   ("#fdecea", "#7a2e00"),
+                "keep":     ("#e8f5e9", "#1b5e20"),
+                "conflict": ("#fff3cd", "#6b4c00"),
+            }
+            dominant = ("conflict" if "conflict" in verdicts
+                        else "delete" if "delete" in verdicts else "keep")
+            bg, fg = _BANNER_COLORS[dominant]
+            n_del = sum(1 for v in self._rule_verdicts.values() if v == "delete")
+            n_keep = sum(1 for v in self._rule_verdicts.values() if v == "keep")
+            n_conf = sum(1 for v in self._rule_verdicts.values() if v == "conflict")
+            parts = []
+            if n_del:
+                parts.append(f"{n_del} pre-selected for deletion")
+            if n_keep:
+                parts.append(f"{n_keep} protected (keep)")
+            if n_conf:
+                parts.append(f"{n_conf} conflict (manual review needed)")
+            banner = tk.Frame(list_frame, bg=bg, pady=3)
+            banner.pack(fill=tk.X, padx=6)
+            tk.Label(banner, text="⚙ Rule: " + ",  ".join(parts),
+                     bg=bg, fg=fg, font=("Helvetica", 8), anchor="w").pack(
+                fill=tk.X, padx=6)
+
         lf = tk.Frame(list_frame)
         lf.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 6))
         lf.rowconfigure(0, weight=1)
@@ -390,7 +536,13 @@ class DuplicatesReviewPopup:
 
         self._file_paths = paths
         self._refresh_file_lb()
-        self._file_lb.selection_set(0)
+
+        # Pre-select files that have an unambiguous "delete" verdict from rules
+        for i, p in enumerate(self._file_paths):
+            if self._rule_verdicts.get(p) == "delete" and not self._is_file_kept(p):
+                self._file_lb.selection_set(i)
+        if not self._file_lb.curselection():
+            self._file_lb.selection_set(0)
 
         self._preview_panel = tk.Frame(self._content, width=260, relief=tk.GROOVE, bd=1)
         self._preview_panel.pack(side=tk.LEFT, fill=tk.Y, padx=(4, 0))
@@ -464,8 +616,10 @@ class DuplicatesReviewPopup:
         sel = self._file_lb.curselection()
         keep = {self._file_paths[i] for i in sel}
         item = self._items[self._index]
-        # Always-kept files are automatically protected regardless of selection
-        keep.update(p for p in item["paths"] if self._is_file_kept(p))
+        # Always-kept files and rule-"keep" files are protected regardless of selection
+        verdicts = getattr(self, "_rule_verdicts", {})
+        keep.update(p for p in item["paths"]
+                    if self._is_file_kept(p) or verdicts.get(p) == "keep")
         deleted = [p for p in item["paths"] if p not in keep and os.path.exists(p)]
         if not deleted:
             self._skip_item()
@@ -547,9 +701,10 @@ class DuplicatesReviewPopup:
         self._show_item()
 
     def _show_report(self, for_execution=False):
-        win = tk.Toplevel(self.popup)
-        win.title("Pigmy Backup Application")
+        win = tk.Toplevel(self._root)
+        win.title("Deletion Report")
         win.geometry("700x500")
+        win.transient(self._root)
         win.grab_set()
 
         tk.Label(win, text="Deletion Report",
@@ -589,7 +744,7 @@ class DuplicatesReviewPopup:
             def execute():
                 self._execute_pending()
                 win.destroy()
-                self.popup.destroy()
+                self._call_on_close()
 
             tk.Button(btn_row, text=f"Execute — send {n} item(s) to recycle bin",
                       command=execute, fg="white", bg="#cc4400",
@@ -620,7 +775,7 @@ class DuplicatesReviewPopup:
                 "Some deletions failed",
                 "The following items could not be moved to the recycle bin:\n\n"
                 + "\n".join(errors),
-                parent=self.popup,
+                parent=self._root,
             )
 
     # ── Navigation ────────────────────────────────────────────────────────────
@@ -643,6 +798,10 @@ class DuplicatesReviewPopup:
         self._index = min(self._index, len(self._items) - 1)
         self._show_item()
 
+    def _call_on_close(self):
+        if self._on_close_cb:
+            self._on_close_cb()
+
     def _leave(self):
         if self._pending:
             n = sum(len(a["deleted"]) for a in self._pending)
@@ -651,9 +810,9 @@ class DuplicatesReviewPopup:
                 f"You have {len(self._pending)} staged action(s) ({n} item(s) to delete) "
                 f"that have not been executed.\n\nLeave without sending anything to the recycle bin?",
                 icon="warning",
-                parent=self.popup,
+                parent=self._root,
             )
             if confirmed:
-                self.popup.destroy()
+                self._call_on_close()
         else:
-            self.popup.destroy()
+            self._call_on_close()

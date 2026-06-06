@@ -5,13 +5,15 @@ import tools_library.tracer as tracer
 from tools_library.file_tree import human_size
 from tools_library.vault_operations import (
     delete_empty_folders, get_repetitions, get_folder_repetitions,
-    filter_external_vault, is_external_inside_vault,
+    is_external_inside_vault,
 )
-from tools_library.drive_variables import kept_file as _KEPT_FILE
+from tools_library.drive_variables import kept_file as _KEPT_FILE, rules_file as _RULES_FILE
 from widgets_library.duplicates_review_popup import DuplicatesReviewPopup
+from widgets_library.filter_external_vault_popup import FilterExternalVaultPopup
+from widgets_library.log_viewer import LogViewer
 from widgets_library.tooltip import Tooltip
 
-_SKIP = {".pigmy-hash", ".pigmy", _KEPT_FILE}
+_SKIP = {".pigmy-hash", ".pigmy", _KEPT_FILE, _RULES_FILE}
 
 
 class MainWindow:
@@ -36,7 +38,7 @@ class MainWindow:
         self.frame = tk.Frame(self.root)
         self.frame.pack(fill=tk.BOTH, expand=True)
         self.frame.columnconfigure(0, weight=1)
-        self.frame.rowconfigure(5, weight=1)  # paned window row expands
+        self.frame.rowconfigure(6, weight=1)  # content area row expands
 
         # Row 0 — header
         hdr = tk.Frame(self.frame, pady=6, padx=10)
@@ -48,6 +50,10 @@ class MainWindow:
         btn_quit = tk.Button(hdr, text="Quit", command=self.root.destroy, relief=tk.FLAT)
         btn_quit.pack(side=tk.RIGHT)
         Tooltip(btn_quit, "Close the application.")
+        btn_logs = tk.Button(hdr, text="Open Logs", relief=tk.FLAT,
+                             command=lambda: LogViewer(self.root))
+        btn_logs.pack(side=tk.RIGHT, padx=(0, 8))
+        Tooltip(btn_logs, "Open the live application log (auto-refreshes every 1.5 s).")
         btn_change = tk.Button(hdr, text="< Change", command=self.on_back, relief=tk.FLAT)
         btn_change.pack(side=tk.RIGHT, padx=(0, 8))
         Tooltip(btn_change, "Go back to the vault selection screen.")
@@ -55,29 +61,41 @@ class MainWindow:
         ttk.Separator(self.frame, orient=tk.HORIZONTAL).grid(
             row=1, column=0, sticky="ew")
 
-        # Row 2 — action buttons
+        # Row 2 — navigation / action buttons
         btn_row = tk.Frame(self.frame, padx=10, pady=6)
         btn_row.grid(row=2, column=0, sticky="ew")
+
+        # View navigation buttons (left group)
+        self._btn_tree = tk.Button(btn_row, text="Vault Tree",
+                                   command=self._show_tree, relief=tk.SUNKEN)
+        self._btn_tree.pack(side=tk.LEFT, padx=(0, 2))
+        Tooltip(self._btn_tree, "Show the vault file tree (the default view).")
+
+        self._btn_dups = tk.Button(btn_row, text="Review Duplicates",
+                                   command=self._review_duplicates, relief=tk.FLAT)
+        self._btn_dups.pack(side=tk.LEFT, padx=(0, 2))
+        Tooltip(self._btn_dups, "Review all duplicates: identical folder pairs first (largest first), then identical file groups (largest first).")
+
+        self._btn_filter = tk.Button(btn_row, text="Filter External Vault",
+                                     command=self._filter_external, relief=tk.FLAT)
+        self._btn_filter.pack(side=tk.LEFT, padx=(0, 12))
+        Tooltip(self._btn_filter, "Pick an external folder and remove any files from it that already exist in this vault.")
+
+        ttk.Separator(btn_row, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=(0, 8))
+
+        # Action buttons (right of separator)
         btn_empty = tk.Button(btn_row, text="Delete Empty Folders",
                               command=self._delete_empty_folders)
         btn_empty.pack(side=tk.LEFT, padx=(0, 6))
-        Tooltip(btn_empty, "Find and send all empty folders inside the vault to the recycle bin. A folder is considered empty only if it contains no files and no subfolders, including hidden files.")
-        btn_dups = tk.Button(btn_row, text="Review Duplicates",
-                             command=self._review_duplicates)
-        btn_dups.pack(side=tk.LEFT, padx=(0, 6))
-        Tooltip(btn_dups, "Review all duplicates: identical folder pairs first (largest first), then identical file groups (largest first).")
-        btn_filter = tk.Button(btn_row, text="Filter External Vault",
-                               command=self._filter_external)
-        btn_filter.pack(side=tk.LEFT, padx=(0, 6))
-        Tooltip(btn_filter, "Pick an external folder and remove any files from it that already exist in this vault.")
+        Tooltip(btn_empty, "Find and send all empty folders inside the vault to the recycle bin.")
         btn_reindex = tk.Button(btn_row, text="Reindex", command=self.on_reindex)
         btn_reindex.pack(side=tk.LEFT)
-        Tooltip(btn_reindex, "Rebuild the index database for this vault — re-scans all files and recomputes hashes. Use after adding, removing, or modifying files.")
+        Tooltip(btn_reindex, "Rebuild the index database for this vault — re-scans all files and recomputes hashes.")
 
         ttk.Separator(self.frame, orient=tk.HORIZONTAL).grid(
             row=3, column=0, sticky="ew")
 
-        # Row 4 — stats bar (updated when sizes are ready)
+        # Row 4 — stats bar
         stats_row = tk.Frame(self.frame, padx=10, pady=4)
         stats_row.grid(row=4, column=0, sticky="ew")
         self._stats_label = tk.Label(stats_row,
@@ -88,21 +106,59 @@ class MainWindow:
         ttk.Separator(self.frame, orient=tk.HORIZONTAL).grid(
             row=5, column=0, sticky="ew")
 
-        # Row 6 — PanedWindow: tree (top) + results (bottom)
-        paned = tk.PanedWindow(self.frame, orient=tk.VERTICAL,
-                               sashrelief=tk.RAISED, sashwidth=4)
-        paned.grid(row=6, column=0, sticky="nsew")
-        self.frame.rowconfigure(6, weight=1)
+        # Row 6 — switchable content area
+        self._content_area = tk.Frame(self.frame)
+        self._content_area.grid(row=6, column=0, sticky="nsew")
+        self._content_area.columnconfigure(0, weight=1)
+        self._content_area.rowconfigure(0, weight=1)
 
-        # Tree pane
-        tree_frame = tk.Frame(paned)
-        paned.add(tree_frame, stretch="always", minsize=120)
+        # Build the tree panel (default view) inside the content area
+        self._tree_pane = tk.PanedWindow(self._content_area, orient=tk.VERTICAL,
+                                          sashrelief=tk.RAISED, sashwidth=4)
+        self._tree_pane.grid(row=0, column=0, sticky="nsew")
+
+        tree_frame = tk.Frame(self._tree_pane)
+        self._tree_pane.add(tree_frame, stretch="always", minsize=120)
         self._build_tree_area(tree_frame)
 
-        # Results pane
-        results_frame = tk.Frame(paned)
-        paned.add(results_frame, stretch="never", minsize=60)
+        results_frame = tk.Frame(self._tree_pane)
+        self._tree_pane.add(results_frame, stretch="never", minsize=60)
         self._build_results_area(results_frame)
+
+        self._active_panel = None  # currently shown tool panel (or None = tree)
+
+    # ── Panel switching ───────────────────────────────────────────────────────
+
+    def _show_tree(self):
+        """Restore the default vault-tree view."""
+        if self._active_panel is not None:
+            self._active_panel.destroy()
+            self._active_panel = None
+        self._tree_pane.grid(row=0, column=0, sticky="nsew")
+        # Update button relief to show which view is active
+        self._btn_tree.config(relief=tk.SUNKEN)
+        self._btn_dups.config(relief=tk.FLAT)
+        self._btn_filter.config(relief=tk.FLAT)
+
+    def _show_panel(self, builder_fn, active_btn):
+        """Replace the content area with an embedded tool panel.
+
+        builder_fn(frame): builds the panel content into the given frame.
+        active_btn: the navigation button to mark as active (SUNKEN).
+        """
+        self._tree_pane.grid_forget()
+        if self._active_panel is not None:
+            self._active_panel.destroy()
+        self._active_panel = tk.Frame(self._content_area)
+        self._active_panel.grid(row=0, column=0, sticky="nsew")
+        self._active_panel.columnconfigure(0, weight=1)
+        self._active_panel.rowconfigure(0, weight=1)
+        builder_fn(self._active_panel)
+        # Update button relief
+        self._btn_tree.config(relief=tk.FLAT)
+        self._btn_dups.config(relief=tk.FLAT)
+        self._btn_filter.config(relief=tk.FLAT)
+        active_btn.config(relief=tk.SUNKEN)
 
     # ── File tree area ────────────────────────────────────────────────────────
 
@@ -244,16 +300,27 @@ class MainWindow:
             self._log("No empty folders found.")
 
     def _review_duplicates(self):
-        self._clear()
         folder_pairs = get_folder_repetitions(self.pigmyhash)
         file_groups = get_repetitions(self.pigmyhash)
-        total = len(folder_pairs) + len(file_groups)
-        if total == 0:
+        if not folder_pairs and not file_groups:
+            self._show_tree()
+            self._clear()
             self._log("No duplicates found.")
             return
-        self._log(f"Found {len(folder_pairs)} duplicate folder pair(s) and {len(file_groups)} duplicate file group(s). Opening review...")
-        DuplicatesReviewPopup(self.root, folder_pairs, file_groups, self._sizes, self.vault_path,
-                             pigmyhash=self.pigmyhash)
+
+        def builder(panel_frame):
+            panel_frame.rowconfigure(0, weight=1)
+            panel_frame.columnconfigure(0, weight=1)
+            inner = tk.Frame(panel_frame)
+            inner.grid(row=0, column=0, sticky="nsew")
+            DuplicatesReviewPopup(
+                inner, self.root,
+                folder_pairs, file_groups, self._sizes, self.vault_path,
+                pigmyhash=self.pigmyhash,
+                on_close=self._show_tree,
+            )
+
+        self._show_panel(builder, self._btn_dups)
 
     def _filter_external(self):
         path = filedialog.askdirectory(title="Select external vault to filter")
@@ -269,16 +336,19 @@ class MainWindow:
             )
             tracer.log(f"Rejected: external path {path!r} is inside vault {self.vault_path!r}")
             return
-        self._clear()
-        self._log(f"Scanning external vault: {path}")
-        self.root.update()
-        deleted = filter_external_vault(self.pigmyhash, path)
-        if deleted:
-            self._log(f"Removed {len(deleted)} file(s) from external vault:")
-            for d in deleted:
-                self._log(f"  {d}")
-        else:
-            self._log("Nothing to remove - no files in the external vault match this vault.")
+
+        def builder(panel_frame):
+            panel_frame.rowconfigure(0, weight=1)
+            panel_frame.columnconfigure(0, weight=1)
+            inner = tk.Frame(panel_frame)
+            inner.grid(row=0, column=0, sticky="nsew")
+            FilterExternalVaultPopup(
+                inner, self.root,
+                self.pigmyhash, path, self.vault_path,
+                on_close=self._show_tree,
+            )
+
+        self._show_panel(builder, self._btn_filter)
 
     def destroy(self):
         self.frame.destroy()
