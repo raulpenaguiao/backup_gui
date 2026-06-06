@@ -1,8 +1,11 @@
 import os
+import platform
+import subprocess
 import tkinter as tk
 from tkinter import ttk, messagebox
 import send2trash
 import tools_library.tracer as tracer
+from tools_library import kept_files
 from widgets_library.tooltip import Tooltip
 from PIL import Image, ImageTk
 
@@ -22,10 +25,31 @@ def _open_file(path):
     try:
         os.startfile(path)
     except AttributeError:
-        import subprocess
         subprocess.Popen(["xdg-open", path])
     except Exception as e:
         tracer.log(f"Error opening {path}: {e}")
+
+
+def _open_in_explorer(path, is_dir=False):
+    """Open the system file explorer at the given path.
+    For files, selects the file in its parent folder.
+    For directories, opens the directory itself.
+    """
+    try:
+        sys_platform = platform.system()
+        norm = os.path.normpath(path)
+        if sys_platform == "Windows":
+            if is_dir:
+                subprocess.Popen(["explorer", norm])
+            else:
+                subprocess.Popen(["explorer", "/select,", norm])
+        elif sys_platform == "Darwin":
+            subprocess.Popen(["open", "-R", norm])
+        else:
+            target = norm if is_dir else os.path.dirname(norm)
+            subprocess.Popen(["xdg-open", target])
+    except Exception as e:
+        tracer.log(f"Error opening explorer for {path!r}: {e}")
 
 
 class DuplicatesReviewPopup:
@@ -37,7 +61,7 @@ class DuplicatesReviewPopup:
     confirms via the Report window or the Leave confirmation dialog.
     """
 
-    def __init__(self, root, folder_pairs, file_groups, sizes, vault_path=""):
+    def __init__(self, root, folder_pairs, file_groups, sizes, vault_path="", pigmyhash=None):
         folder_items = sorted(
             [{"type": "folder", "paths": list(p)} for p in folder_pairs],
             key=lambda x: sizes.get(x["paths"][0], 0),
@@ -54,6 +78,15 @@ class DuplicatesReviewPopup:
         self._vault_path = vault_path.rstrip(os.sep)
         # Each entry: {"label": str, "deleted": [paths], "original_item": dict}
         self._pending = []
+        # Build reverse map path -> hash from pigmyhash for "always keep" lookups
+        self._path_to_hash = {}
+        if pigmyhash:
+            for h, groups in pigmyhash.items():
+                for group in groups:
+                    for p in group:
+                        self._path_to_hash[os.path.normpath(p)] = h
+        # Load persisted keep list for this vault
+        self._kept = kept_files.load_kept(self._vault_path) if self._vault_path else set()
 
         if not self._items:
             return
@@ -160,6 +193,33 @@ class DuplicatesReviewPopup:
             return rel or os.path.basename(path)
         return path
 
+    # ── Kept-files helpers ────────────────────────────────────────────────────
+
+    def _is_file_kept(self, path):
+        if not self._vault_path or not self._path_to_hash:
+            return False
+        norm = os.path.normpath(path)
+        h = self._path_to_hash.get(norm)
+        if not h:
+            return False
+        rel = os.path.relpath(norm, self._vault_path)
+        return (h, rel) in self._kept
+
+    def _refresh_file_lb(self):
+        """Rebuild the file listbox in place, marking always-kept items."""
+        sel = list(self._file_lb.curselection())
+        self._file_lb.delete(0, tk.END)
+        for i, path in enumerate(self._file_paths):
+            label = self._rel(path)
+            if self._is_file_kept(path):
+                label += "  (kept)"
+            self._file_lb.insert(tk.END, label)
+            if self._is_file_kept(path):
+                self._file_lb.itemconfig(i, bg="#e8f5e9", fg="#1b5e20")
+        for i in sel:
+            if i < len(self._file_paths):
+                self._file_lb.selection_set(i)
+
     # ── Folder view ───────────────────────────────────────────────────────────
 
     def _build_folder_view(self, paths):
@@ -192,6 +252,8 @@ class DuplicatesReviewPopup:
         self._folder_tree_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
         self._folder_lb.bind("<<ListboxSelect>>", self._on_folder_select)
+        self._folder_lb.bind("<Control-Button-1>", self._on_ctrl_click_folder)
+        Tooltip(self._folder_lb, "Ctrl+click to open in file explorer")
         self._on_folder_select()
 
     def _on_folder_select(self, _event=None):
@@ -228,6 +290,33 @@ class DuplicatesReviewPopup:
             iid = tree.insert(parent_iid, "end", text=entry.name)
             if entry.is_dir(follow_symlinks=False):
                 self._fill_tree(tree, iid, entry.path)
+
+    def _on_ctrl_click_folder(self, event):
+        index = self._folder_lb.nearest(event.y)
+        if 0 <= index < len(self._folder_paths):
+            _open_in_explorer(self._folder_paths[index], is_dir=True)
+
+    def _on_ctrl_click_file(self, event):
+        index = self._file_lb.nearest(event.y)
+        if 0 <= index < len(self._file_paths):
+            _open_in_explorer(self._file_paths[index], is_dir=False)
+
+    def _always_keep_selected(self):
+        sel = self._file_lb.curselection()
+        if not sel:
+            return
+        for i in sel:
+            path = self._file_paths[i]
+            norm = os.path.normpath(path)
+            h = self._path_to_hash.get(norm)
+            if not h:
+                tracer.log(f"Always-keep: no hash found for {path!r}, skipping")
+                continue
+            rel = os.path.relpath(norm, self._vault_path)
+            self._kept.add((h, rel))
+            tracer.log(f"Always-keep marked: {rel!r}")
+        kept_files.save_kept(self._vault_path, self._kept)
+        self._refresh_file_lb()
 
     def _build_folder_buttons(self):
         b1 = tk.Button(self._btn_row, text="Stage: Keep Selected (delete others)",
@@ -300,8 +389,7 @@ class DuplicatesReviewPopup:
         hsb.grid(row=1, column=0, sticky="ew")
 
         self._file_paths = paths
-        for path in paths:
-            self._file_lb.insert(tk.END, self._rel(path))
+        self._refresh_file_lb()
         self._file_lb.selection_set(0)
 
         self._preview_panel = tk.Frame(self._content, width=260, relief=tk.GROOVE, bd=1)
@@ -309,6 +397,8 @@ class DuplicatesReviewPopup:
         self._preview_panel.pack_propagate(False)
 
         self._file_lb.bind("<<ListboxSelect>>", self._on_file_select)
+        self._file_lb.bind("<Control-Button-1>", self._on_ctrl_click_file)
+        Tooltip(self._file_lb, "Ctrl+click to open in file explorer")
         self._on_file_select()
 
     def _on_file_select(self, _event=None):
@@ -363,11 +453,19 @@ class DuplicatesReviewPopup:
                        command=self._skip_item)
         b3.pack(side=tk.LEFT)
         Tooltip(b3, "Keep all copies and move on without staging any deletion.")
+        if self._vault_path and self._path_to_hash:
+            b4 = tk.Button(self._btn_row, text="Always Keep This",
+                           command=self._always_keep_selected)
+            b4.pack(side=tk.LEFT, padx=(6, 0))
+            Tooltip(b4, "Mark selected file(s) as always-keep: they will never be"
+                        " suggested for deletion in future sessions, even after reindexing.")
 
     def _queue_keep_file(self):
         sel = self._file_lb.curselection()
         keep = {self._file_paths[i] for i in sel}
         item = self._items[self._index]
+        # Always-kept files are automatically protected regardless of selection
+        keep.update(p for p in item["paths"] if self._is_file_kept(p))
         deleted = [p for p in item["paths"] if p not in keep and os.path.exists(p)]
         if not deleted:
             self._skip_item()

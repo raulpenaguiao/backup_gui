@@ -1,13 +1,17 @@
 import os
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import ttk, filedialog, messagebox
 import tools_library.tracer as tracer
 from tools_library.file_tree import human_size
-from tools_library.vault_operations import delete_empty_folders, get_repetitions, get_folder_repetitions, filter_external_vault
+from tools_library.vault_operations import (
+    delete_empty_folders, get_repetitions, get_folder_repetitions,
+    filter_external_vault, is_external_inside_vault,
+)
+from tools_library.drive_variables import kept_file as _KEPT_FILE
 from widgets_library.duplicates_review_popup import DuplicatesReviewPopup
 from widgets_library.tooltip import Tooltip
 
-_SKIP = {".pigmy-hash", ".pigmy"}
+_SKIP = {".pigmy-hash", ".pigmy", _KEPT_FILE}
 
 
 class MainWindow:
@@ -248,11 +252,22 @@ class MainWindow:
             self._log("No duplicates found.")
             return
         self._log(f"Found {len(folder_pairs)} duplicate folder pair(s) and {len(file_groups)} duplicate file group(s). Opening review...")
-        DuplicatesReviewPopup(self.root, folder_pairs, file_groups, self._sizes, self.vault_path)
+        DuplicatesReviewPopup(self.root, folder_pairs, file_groups, self._sizes, self.vault_path,
+                             pigmyhash=self.pigmyhash)
 
     def _filter_external(self):
         path = filedialog.askdirectory(title="Select external vault to filter")
         if not path:
+            return
+        if is_external_inside_vault(self.vault_path, path):
+            messagebox.showwarning(
+                "Invalid Selection",
+                "The selected folder is inside (or is) the current vault.\n\n"
+                "Please select a folder that is completely outside the vault "
+                "to avoid accidental deletions.",
+                parent=self.root,
+            )
+            tracer.log(f"Rejected: external path {path!r} is inside vault {self.vault_path!r}")
             return
         self._clear()
         self._log(f"Scanning external vault: {path}")

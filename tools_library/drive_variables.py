@@ -23,5 +23,6 @@ drives_file = "drives.json"
 
 # New vault system
 pigmy_hash_file = ".pigmy-hash"
+kept_file = ".pigmy-keep"
 vaults = []
 vaults_file = "vaults.json"
