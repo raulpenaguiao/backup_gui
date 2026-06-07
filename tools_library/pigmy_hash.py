@@ -207,13 +207,13 @@ def _same_content(path1, path2):
 
 def save_pigmy_hash(vault_path, pigmyhash):
     path = os.path.join(vault_path, drive_variables.pigmy_hash_file)
-    with open(path, "w") as f:
+    with open(path, "w", encoding='utf-8') as f:
         json.dump(pigmyhash, f)
 
 
 def load_pigmy_hash(vault_path):
     path = os.path.join(vault_path, drive_variables.pigmy_hash_file)
-    with open(path, "r") as f:
+    with open(path, "r", encoding='utf-8') as f:
         data = json.load(f)
     # Normalize separators — tkinter returns forward-slash paths on Windows,
     # which mix with os.sep when scandir builds child paths, breaking send2trash.

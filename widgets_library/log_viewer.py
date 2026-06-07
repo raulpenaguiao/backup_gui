@@ -44,7 +44,7 @@ class LogViewer:
 
     def _refresh(self):
         try:
-            with open(log_file_path, "r", errors="replace") as f:
+            with open(log_file_path, "r", encoding='utf-8', errors="replace") as f:
                 content = f.read()
         except FileNotFoundError:
             content = "(log file not found)"

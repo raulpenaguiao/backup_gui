@@ -19,9 +19,9 @@ def log(line, trace_level=0):
     caller_file = inspect.currentframe().f_back.f_code.co_filename
     if not os.path.exists(log_file_path):
         os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
-        with open(log_file_path, 'w') as file:
+        with open(log_file_path, 'w', encoding='utf-8') as file:
             file.write('')
-    with open(log_file_path, 'a') as file:
+    with open(log_file_path, 'a', encoding='utf-8') as file:
         file.write(f"{timestamp()} {caller_file}>{caller_name} {line} \n")
 
 def clear_log(filename):
@@ -33,7 +33,7 @@ def log_to_report(line, filename):
     log_file_path = os.path.join(log_folder_path, filename)
     if not os.path.exists(log_file_path):
         os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
-        with open(log_file_path, 'w') as file:
+        with open(log_file_path, 'w', encoding='utf-8') as file:
             file.write('')
-    with open(log_file_path, 'a') as file:
+    with open(log_file_path, 'a', encoding='utf-8') as file:
         file.write(line)
