@@ -1,10 +1,23 @@
 import os
+import sys
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import tools_library.drive_variables as drive_variables
 import tools_library.dbs as dbs
 import tools_library.tracer as tracer
 from widgets_library.tooltip import Tooltip
+
+
+def _read_version():
+    try:
+        if getattr(sys, 'frozen', False):
+            base = sys._MEIPASS
+        else:
+            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(base, "VERSION"), encoding='utf-8') as f:
+            return f.read().strip()
+    except Exception:
+        return "unknown"
 
 
 class VaultPicker:
@@ -58,6 +71,9 @@ class VaultPicker:
         btn_open = ttk.Button(bottom_row, text="Open Vault", command=self._open)
         btn_open.pack(side=tk.LEFT, ipadx=24, ipady=10)
         Tooltip(btn_open, "Open the selected vault. If no index exists yet, one will be created automatically.")
+
+        ttk.Label(self.frame, text=f"Pigmy Backup v{_read_version()}",
+                  font=("Helvetica", 8), foreground="gray").pack(side=tk.BOTTOM, pady=(16, 0))
 
     def _refresh_list(self):
         self._listbox.delete(0, tk.END)

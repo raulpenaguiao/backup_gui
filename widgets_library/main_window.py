@@ -1,4 +1,5 @@
 import os
+import sys
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import tools_library.tracer as tracer
@@ -6,8 +7,12 @@ from tools_library.file_tree import human_size
 
 def _read_version():
     try:
-        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        with open(os.path.join(here, "VERSION")) as f:
+        # When frozen by PyInstaller --onefile, bundled data lands in sys._MEIPASS
+        if getattr(sys, 'frozen', False):
+            base = sys._MEIPASS
+        else:
+            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(base, "VERSION"), encoding='utf-8') as f:
             return f.read().strip()
     except Exception:
         return "unknown"

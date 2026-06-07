@@ -11,7 +11,10 @@ if [[ ! "$new_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit 1
 fi
 
-git tag "v$new_version"
+echo "$new_version" > VERSION
+git add VERSION
+git commit -m "Bump version to $new_version"
 git push origin main
+git tag "v$new_version"
 git push origin "v$new_version"
 echo "Released v$new_version"

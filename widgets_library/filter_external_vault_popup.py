@@ -356,18 +356,23 @@ class FilterExternalVaultPopup:
 
     def _do_delete(self, files, detail_win):
         detail_win.destroy()
+        self._root.config(cursor="watch")
+        self._root.update_idletasks()
         deleted = []
         errors = []
-        for f in files:
-            try:
-                send2trash.send2trash(os.path.normpath(f))
-                deleted.append(f)
-                tracer.log(f"Deleted from external vault: {f!r}")
-                if self._tree.exists(f):
-                    self._tree.delete(f)
-            except Exception as e:
-                errors.append(f)
-                tracer.log(f"Error deleting {f!r}: {e}")
+        try:
+            for f in files:
+                try:
+                    send2trash.send2trash(os.path.normpath(f))
+                    deleted.append(f)
+                    tracer.log(f"Deleted from external vault: {f!r}")
+                    if self._tree.exists(f):
+                        self._tree.delete(f)
+                except Exception as e:
+                    errors.append(f)
+                    tracer.log(f"Error deleting {f!r}: {e}")
+        finally:
+            self._root.config(cursor="")
 
         # Remove now-empty folder entries
         for iid in list(self._tree.get_children()):

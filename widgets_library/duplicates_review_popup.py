@@ -755,19 +755,24 @@ class DuplicatesReviewPopup:
             tk.Button(btn_row, text="Close", command=win.destroy).pack(side=tk.LEFT)
 
     def _execute_pending(self):
+        self._root.config(cursor="watch")
+        self._root.update_idletasks()
         errors = []
-        for action in self._pending:
-            for path in action["deleted"]:
-                normed = os.path.normpath(path)
-                if not os.path.exists(normed):
-                    tracer.log(f"Already gone, skipping: {path}")
-                    continue
-                try:
-                    send2trash.send2trash(normed)
-                    tracer.log(f"Sent to trash: {path}")
-                except Exception as e:
-                    tracer.log(f"Error deleting {path}: {e}")
-                    errors.append(f"{os.path.basename(path)}: {e}")
+        try:
+            for action in self._pending:
+                for path in action["deleted"]:
+                    normed = os.path.normpath(path)
+                    if not os.path.exists(normed):
+                        tracer.log(f"Already gone, skipping: {path}")
+                        continue
+                    try:
+                        send2trash.send2trash(normed)
+                        tracer.log(f"Sent to trash: {path}")
+                    except Exception as e:
+                        tracer.log(f"Error deleting {path}: {e}")
+                        errors.append(f"{os.path.basename(path)}: {e}")
+        finally:
+            self._root.config(cursor="")
         self._pending.clear()
         self._update_pending_label()
         if errors:
