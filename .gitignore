@@ -1,3 +1,5 @@
+.pigmy*
+
 # backup system files
 drives.json
 logs/*

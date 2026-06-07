@@ -18,3 +18,4 @@ git push origin main
 git tag "v$new_version"
 git push origin "v$new_version"
 echo "Released v$new_version"
+echo "Watch progress at: https://github.com/raulpenaguiao/backup_gui/actions"

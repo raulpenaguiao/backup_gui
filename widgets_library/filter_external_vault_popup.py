@@ -364,7 +364,7 @@ class FilterExternalVaultPopup:
     def _do_delete(self, files, detail_win):
         detail_win.destroy()
         self._root.config(cursor="watch")
-        self._root.update_idletasks()
+        self._root.update()
         deleted = []
         errors = []
         try:
@@ -401,7 +401,7 @@ class FilterExternalVaultPopup:
 
     def _delete_empty_folders(self):
         self._root.config(cursor="watch")
-        self._root.update_idletasks()
+        self._root.update()
         try:
             deleted = delete_empty_folders(self._external_path)
         finally:

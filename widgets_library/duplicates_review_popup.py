@@ -756,7 +756,7 @@ class DuplicatesReviewPopup:
 
     def _execute_pending(self):
         self._root.config(cursor="watch")
-        self._root.update_idletasks()
+        self._root.update()
         errors = []
         try:
             for action in self._pending:

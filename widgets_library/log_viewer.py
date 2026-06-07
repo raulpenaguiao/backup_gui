@@ -1,10 +1,11 @@
+import os
 import tkinter as tk
 from tkinter import ttk
-from tools_library.tracer import log_file_path
+from tools_library.tracer import log_folder_path, current_log_path
 
 
 class LogViewer:
-    """Manual-refresh log viewer Toplevel."""
+    """Manual-refresh log viewer with per-minute file selector."""
 
     def __init__(self, root):
         self._root = root
@@ -13,15 +14,34 @@ class LogViewer:
         self._win.geometry("900x500")
         self._win.resizable(True, True)
         self._win.protocol("WM_DELETE_WINDOW", self._win.destroy)
-
         self._build()
         self._refresh()
+
+    def _available_logs(self):
+        try:
+            names = sorted(
+                [e.name for e in os.scandir(log_folder_path)
+                 if e.is_file() and e.name.startswith("tracer_") and e.name.endswith(".log")],
+                reverse=True,
+            )
+        except FileNotFoundError:
+            names = []
+        return names
 
     def _build(self):
         ctrl = tk.Frame(self._win, padx=8, pady=6)
         ctrl.pack(fill=tk.X)
-        tk.Label(ctrl, text=log_file_path, fg="#555",
+
+        tk.Label(ctrl, text="File:", fg="#555").pack(side=tk.LEFT)
+        self._file_var = tk.StringVar()
+        self._combo = ttk.Combobox(ctrl, textvariable=self._file_var,
+                                    state="readonly", width=22)
+        self._combo.pack(side=tk.LEFT, padx=(4, 8))
+        self._combo.bind("<<ComboboxSelected>>", lambda _: self._load_selected())
+
+        tk.Label(ctrl, text=log_folder_path, fg="#888",
                  font=("Courier", 8)).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
         tk.Button(ctrl, text="Refresh",
                   command=self._refresh).pack(side=tk.RIGHT, padx=(4, 0))
 
@@ -43,13 +63,26 @@ class LogViewer:
         hsb.grid(row=1, column=0, sticky="ew")
 
     def _refresh(self):
-        try:
-            with open(log_file_path, "r", encoding='utf-8', errors="replace") as f:
-                content = f.read()
-        except FileNotFoundError:
-            content = "(log file not found)"
-        except Exception as e:
-            content = f"(error reading log: {e})"
+        files = self._available_logs()
+        self._combo["values"] = files
+        current = os.path.basename(current_log_path())
+        if self._file_var.get() not in files:
+            self._file_var.set(current if current in files else (files[0] if files else ""))
+        self._load_selected()
+
+    def _load_selected(self):
+        name = self._file_var.get()
+        if not name:
+            content = "(no log files found)"
+        else:
+            try:
+                with open(os.path.join(log_folder_path, name),
+                          encoding='utf-8', errors="replace") as f:
+                    content = f.read()
+            except FileNotFoundError:
+                content = "(log file not found)"
+            except Exception as e:
+                content = f"(error reading log: {e})"
 
         self._txt.config(state=tk.NORMAL)
         self._txt.delete("1.0", tk.END)

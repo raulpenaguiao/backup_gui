@@ -122,6 +122,38 @@ class App:
                                parent=self.root)
 
 
+def _check_log_size(root):
+    from tools_library.tracer import log_folder_size, log_folder_path
+    size = log_folder_size()
+    limit = 100 * 1024 * 1024  # 100 MB
+    if size < limit:
+        return
+    try:
+        files = sorted(
+            [e for e in os.scandir(log_folder_path)
+             if e.is_file() and e.name.startswith("tracer_") and e.name.endswith(".log")],
+            key=lambda e: e.name,
+        )
+    except FileNotFoundError:
+        return
+    n = len(files)
+    if n < 2:
+        return
+    half = n // 2
+    size_mb = size / (1024 * 1024)
+    if messagebox.askyesno(
+        "Log folder too large",
+        f"The log folder is {size_mb:.0f} MB ({n} files).\n\n"
+        f"Delete the {half} oldest log file(s) to free up space?",
+        parent=root,
+    ):
+        for entry in files[:half]:
+            try:
+                os.remove(entry.path)
+            except Exception:
+                pass
+
+
 def create_gui():
     drive_variables.vaults = get_saved_vaults()
     initialize_vaults()
@@ -129,6 +161,7 @@ def create_gui():
     root.protocol("WM_DELETE_WINDOW", root.destroy)
     setup_icon(root)
     App(root)
+    root.after(500, lambda: _check_log_size(root))
     root.mainloop()
 
 
