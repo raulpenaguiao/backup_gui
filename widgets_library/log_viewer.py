@@ -4,9 +4,7 @@ from tools_library.tracer import log_file_path
 
 
 class LogViewer:
-    """Simple auto-refreshing log viewer Toplevel."""
-
-    _REFRESH_MS = 1500
+    """Manual-refresh log viewer Toplevel."""
 
     def __init__(self, root):
         self._root = root
@@ -14,7 +12,7 @@ class LogViewer:
         self._win.title("Application Log")
         self._win.geometry("900x500")
         self._win.resizable(True, True)
-        self._win.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._win.protocol("WM_DELETE_WINDOW", self._win.destroy)
 
         self._build()
         self._refresh()
@@ -24,7 +22,7 @@ class LogViewer:
         ctrl.pack(fill=tk.X)
         tk.Label(ctrl, text=log_file_path, fg="#555",
                  font=("Courier", 8)).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        tk.Button(ctrl, text="Refresh now",
+        tk.Button(ctrl, text="Refresh",
                   command=self._refresh).pack(side=tk.RIGHT, padx=(4, 0))
 
         ttk.Separator(self._win, orient=tk.HORIZONTAL).pack(fill=tk.X)
@@ -58,13 +56,3 @@ class LogViewer:
         self._txt.insert(tk.END, content)
         self._txt.see(tk.END)
         self._txt.config(state=tk.DISABLED)
-
-        if self._win.winfo_exists():
-            self._after_id = self._win.after(self._REFRESH_MS, self._refresh)
-
-    def _on_close(self):
-        try:
-            self._win.after_cancel(self._after_id)
-        except AttributeError:
-            pass
-        self._win.destroy()

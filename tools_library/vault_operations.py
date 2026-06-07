@@ -89,12 +89,14 @@ def scan_external_vault(pigmyhash, external_path, stop_event=None,
         if progress_callback:
             progress_callback(i, total)
 
+        tracer.log(f"Scanning external file {i+1}/{total}: {file_path!r}")
         h = compute_file_hash(file_path)
         if h is None or h not in vault_files_by_hash:
             continue
 
         for vault_file in vault_files_by_hash[h]:
             try:
+                tracer.log(f"Comparing {file_path!r} vs {vault_file!r}")
                 if filecmp.cmp(file_path, vault_file, shallow=False):
                     tracer.log(f"Match confirmed: {file_path!r} == {vault_file!r}")
                     matched.append(file_path)
@@ -145,6 +147,7 @@ def filter_external_vault(pigmyhash, external_path, stop_event=None, progress_ca
         if progress_callback:
             progress_callback(i, total)
 
+        tracer.log(f"Filtering external file {i+1}/{total}: {file_path!r}")
         h = compute_file_hash(file_path)
         if h is None or h not in vault_files_by_hash:
             continue

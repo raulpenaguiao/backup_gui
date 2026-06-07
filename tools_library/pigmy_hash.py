@@ -1,4 +1,5 @@
 import os
+import stat
 import hashlib
 import json
 import filecmp
@@ -19,7 +20,14 @@ def compute_file_hash(file_path):
 def _hash_file(file_path):
     """Return (hash_str, None) on success or (None, error_str) on failure."""
     try:
-        size = os.path.getsize(file_path)
+        st = os.stat(file_path)
+        if not stat.S_ISREG(st.st_mode):
+            # FIFOs, sockets, block/char devices — open()+read() would block forever
+            err = f"not a regular file (mode={oct(st.st_mode)})"
+            tracer.log(f"Skipping {file_path!r}: {err}")
+            return None, err
+        size = st.st_size
+        tracer.log(f"Hashing {file_path!r} ({size:,} bytes)")
         with open(file_path, "rb") as f:
             if size < 1_000:
                 return hashlib.md5(f.read()).hexdigest(), None
