@@ -20,24 +20,60 @@ def paths_overlap(vault_path, external_path):
     )
 
 
-def delete_empty_folders(vault_path):
+def delete_empty_folders(vault_path, progress_callback=None):
     """
-    Remove all empty directories inside vault_path. Returns list of deleted paths.
-    os.listdir includes hidden files (dot-files on Unix, hidden-attribute files on
-    Windows), so a folder is only considered empty when it truly has no contents.
+    Two-phase algorithm to remove empty directories inside vault_path.
+
+    Phase 1 (scan): walk bottom-up to find every directory that is empty or
+    will become empty once its empty subdirectories are removed.  A directory
+    qualifies when it contains no files and all of its subdirectories also
+    qualify.
+
+    Phase 2 (delete): send only the topmost qualifying directories to trash —
+    their entire subtree goes with them in a single operation, avoiding one
+    trash call per nested empty folder.
+
+    Returns the list of all deleted paths (including nested ones).
+
+    progress_callback(phase, deleted_count, current_path):
+      phase="scan"   — emitted for every directory examined; deleted_count is 0
+      phase="delete" — emitted after each top-level deletion; deleted_count is
+                       the running total including all nested dirs
     """
-    deleted = []
+    # ── Phase 1: identify directories that are (or will become) empty ─────────
+    will_delete = set()
+
     for dirpath, dirnames, filenames in os.walk(vault_path, topdown=False):
         if dirpath == vault_path:
             continue
+        if progress_callback:
+            progress_callback("scan", 0, dirpath)
+        if filenames:
+            continue
+        subdirs = [os.path.join(dirpath, d) for d in dirnames]
+        if all(s in will_delete for s in subdirs):
+            will_delete.add(dirpath)
+
+    # ── Phase 2: delete only top-level empty dirs ─────────────────────────────
+    # Top-level = parent is not itself being deleted.
+    top_level = sorted(
+        d for d in will_delete
+        if os.path.dirname(d) not in will_delete
+    )
+
+    deleted = []
+    for dirpath in top_level:
         try:
-            # os.listdir returns all entries including hidden files and folders
-            if not os.listdir(dirpath):
-                send2trash.send2trash(os.path.normpath(dirpath))
-                deleted.append(dirpath)
-                tracer.log(f"Deleted empty folder: {dirpath}")
+            send2trash.send2trash(os.path.normpath(dirpath))
+            gone = [d for d in will_delete
+                    if d == dirpath or d.startswith(dirpath + os.sep)]
+            deleted.extend(gone)
+            tracer.log(f"Deleted empty folder: {dirpath!r}")
         except Exception as e:
-            tracer.log(f"Error deleting {dirpath}: {e}")
+            tracer.log(f"Error deleting {dirpath!r}: {e}")
+        if progress_callback:
+            progress_callback("delete", len(deleted), dirpath)
+
     return deleted
 
 

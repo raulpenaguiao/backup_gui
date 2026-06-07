@@ -7,6 +7,7 @@ import send2trash
 import tools_library.tracer as tracer
 from tools_library.file_tree import human_size
 from tools_library.vault_operations import scan_external_vault, delete_empty_folders
+from tools_library.pigmy_hash import compute_file_hash
 from widgets_library.tooltip import Tooltip
 
 
@@ -99,6 +100,15 @@ class FilterExternalVaultPopup:
         Tooltip(self._delete_btn,
                 "Review then confirm deletion of the selected items (moved to system trash).")
 
+        self._unique_btn = tk.Button(ctrl, text="Keep unique copy",
+                                      command=self._keep_unique_copies,
+                                      state=tk.DISABLED)
+        self._unique_btn.pack(side=tk.RIGHT, padx=(0, 6))
+        Tooltip(self._unique_btn,
+                "Among the matched files, keep only the first occurrence of each duplicate "
+                "group (sorted alphabetically by path) and move all other copies to trash.\n"
+                "Guarantees a single canonical copy of every file remains in the same location.")
+
         # Results treeview
         tv_frame = tk.Frame(self._win, padx=10, pady=2)
         tv_frame.pack(fill=tk.BOTH, expand=True)
@@ -184,6 +194,7 @@ class FilterExternalVaultPopup:
             self._add_file_row(file_path, size)
             self._update_match_label()
             self._delete_btn.config(state=tk.NORMAL)
+            self._unique_btn.config(state=tk.NORMAL)
         elif kind == "done":
             _, all_files, matched = msg
             self._all_files = all_files
@@ -399,17 +410,186 @@ class FilterExternalVaultPopup:
         if not self._matches:
             self._delete_btn.config(state=tk.DISABLED)
 
-    def _delete_empty_folders(self):
+    def _keep_unique_copies(self):
+        if not self._matches:
+            messagebox.showinfo("Keep unique copy", "No matched files to process.",
+                                parent=self._root)
+            return
+
+        files_snapshot = list(self._matches)
+        total = len(files_snapshot)
+
+        dlg = tk.Toplevel(self._root)
+        dlg.title("Finding duplicates")
+        dlg.geometry("420x110")
+        dlg.transient(self._root)
+        dlg.grab_set()
+        dlg.resizable(False, False)
+        dlg.protocol("WM_DELETE_WINDOW", lambda: None)
+
+        tk.Label(dlg, text="Analysing matched files…",
+                 font=("Helvetica", 11, "bold"), pady=10).pack()
+        bar = ttk.Progressbar(dlg, mode="determinate", length=380, maximum=total)
+        bar.pack(padx=20)
+        status_lbl = tk.Label(dlg, text="", fg="#555", font=("Helvetica", 9))
+        status_lbl.pack(pady=4)
+
         self._root.config(cursor="watch")
         self._root.update()
-        try:
-            deleted = delete_empty_folders(self._external_path)
-        finally:
-            self._root.config(cursor="")
-        n = len(deleted)
-        msg = f"Removed {n} empty folder(s) from the external vault." if n else "No empty folders found."
-        tracer.log(f"Delete EV empty folders: {n} removed from {self._external_path!r}")
-        messagebox.showinfo("Delete EV empty folders", msg, parent=self._root)
+
+        msg_q = queue.Queue()
+
+        def worker():
+            hash_to_files = {}
+            for i, path in enumerate(sorted(files_snapshot)):
+                h = compute_file_hash(path)
+                if h is not None:
+                    hash_to_files.setdefault(h, []).append(path)
+                msg_q.put(("progress", i + 1))
+            to_delete = []
+            for paths in hash_to_files.values():
+                to_delete.extend(paths[1:])
+            msg_q.put(("done", sorted(to_delete)))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+        def poll():
+            try:
+                while True:
+                    msg = msg_q.get_nowait()
+                    if msg[0] == "progress":
+                        _, i = msg
+                        bar["value"] = i
+                        status_lbl.config(text=f"Hashing {i}/{total}…")
+                    elif msg[0] == "done":
+                        _, to_delete = msg
+                        dlg.destroy()
+                        self._root.config(cursor="")
+                        self._confirm_unique_delete(to_delete)
+                        return
+            except queue.Empty:
+                pass
+            dlg.after(80, poll)
+
+        poll()
+
+    def _confirm_unique_delete(self, files):
+        if not files:
+            messagebox.showinfo("Keep unique copy",
+                                "No duplicate copies found among matched files.\n"
+                                "All matched files already have unique content.",
+                                parent=self._root)
+            return
+
+        def safe_size(p):
+            try:
+                return os.path.getsize(p)
+            except OSError:
+                return 0
+
+        total_size = sum(safe_size(f) for f in files)
+
+        detail = tk.Toplevel(self._root)
+        detail.title("Keep unique copy — Pre-action Detail")
+        detail.geometry("720x460")
+        detail.transient(self._root)
+        detail.grab_set()
+        detail.resizable(True, True)
+
+        tk.Label(detail,
+                 text=(f"The following {len(files):,} duplicate file(s)  "
+                       f"({human_size(total_size)})  will be moved to trash:\n"
+                       "(first occurrence alphabetically is kept; all other copies deleted)"),
+                 padx=10, pady=8, anchor=tk.W,
+                 font=("Helvetica", 10)).pack(fill=tk.X)
+
+        txt_frame = tk.Frame(detail, padx=10)
+        txt_frame.pack(fill=tk.BOTH, expand=True)
+        txt_frame.rowconfigure(0, weight=1)
+        txt_frame.columnconfigure(0, weight=1)
+
+        txt = tk.Text(txt_frame, font=("Courier", 8), wrap=tk.NONE,
+                      state=tk.NORMAL, relief=tk.FLAT, bg="#f8f8f8")
+        vsb2 = ttk.Scrollbar(txt_frame, orient=tk.VERTICAL, command=txt.yview)
+        hsb2 = ttk.Scrollbar(txt_frame, orient=tk.HORIZONTAL, command=txt.xview)
+        txt.configure(yscrollcommand=vsb2.set, xscrollcommand=hsb2.set)
+        txt.grid(row=0, column=0, sticky="nsew")
+        vsb2.grid(row=0, column=1, sticky="ns")
+        hsb2.grid(row=1, column=0, sticky="ew")
+
+        for f in files:
+            rel = os.path.relpath(f, self._external_path)
+            txt.insert(tk.END, f"EV: {rel}  [{human_size(safe_size(f))}]\n")
+        txt.config(state=tk.DISABLED)
+
+        btn_row = tk.Frame(detail, padx=10, pady=6)
+        btn_row.pack(fill=tk.X)
+        tk.Button(btn_row, text="Cancel",
+                  command=detail.destroy).pack(side=tk.RIGHT, padx=(4, 0))
+        tk.Button(btn_row, text="Confirm — Move to Trash",
+                  bg="#c0392b", fg="white",
+                  command=lambda: self._do_delete(files, detail)).pack(side=tk.RIGHT)
+
+    def _delete_empty_folders(self):
+        dlg = tk.Toplevel(self._root)
+        dlg.title("Deleting empty folders")
+        dlg.geometry("460x140")
+        dlg.transient(self._root)
+        dlg.grab_set()
+        dlg.resizable(False, False)
+        dlg.protocol("WM_DELETE_WINDOW", lambda: None)
+
+        tk.Label(dlg, text="Deleting empty folders…",
+                 font=("Helvetica", 11, "bold"), pady=10).pack()
+        bar = ttk.Progressbar(dlg, mode="indeterminate", length=420)
+        bar.pack(padx=20)
+        bar.start(25)
+        status_lbl = tk.Label(dlg, text="Starting…", fg="#555", font=("Helvetica", 9))
+        status_lbl.pack(pady=4)
+        cur_lbl = tk.Label(dlg, text="", fg="#888", font=("Courier", 8))
+        cur_lbl.pack(padx=10, fill=tk.X)
+
+        self._root.config(cursor="watch")
+        self._root.update()
+
+        msg_q = queue.Queue()
+
+        def worker():
+            def cb(phase, n_deleted, current_dir):
+                msg_q.put(("progress", phase, n_deleted, current_dir))
+            result = delete_empty_folders(self._external_path, progress_callback=cb)
+            msg_q.put(("done", result))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+        def poll():
+            try:
+                while True:
+                    msg = msg_q.get_nowait()
+                    if msg[0] == "progress":
+                        _, phase, n_deleted, current_dir = msg
+                        rel = os.path.relpath(current_dir, self._external_path)
+                        if phase == "scan":
+                            status_lbl.config(text="Scanning for empty folders…")
+                        else:
+                            status_lbl.config(text=f"Deleted {n_deleted} folder(s) so far…")
+                        cur_lbl.config(text=f"EV: {rel}")
+                    elif msg[0] == "done":
+                        _, deleted = msg
+                        bar.stop()
+                        dlg.destroy()
+                        self._root.config(cursor="")
+                        n = len(deleted)
+                        result_msg = (f"Removed {n} empty folder(s) from the external vault."
+                                      if n else "No empty folders found.")
+                        tracer.log(f"Delete EV empty folders: {n} removed from {self._external_path!r}")
+                        messagebox.showinfo("Delete EV empty folders", result_msg, parent=self._root)
+                        return
+            except queue.Empty:
+                pass
+            dlg.after(80, poll)
+
+        poll()
 
     # ── Misc ──────────────────────────────────────────────────────────────────
 
