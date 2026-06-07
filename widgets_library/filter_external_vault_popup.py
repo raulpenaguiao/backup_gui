@@ -6,7 +6,7 @@ from tkinter import ttk, messagebox
 import send2trash
 import tools_library.tracer as tracer
 from tools_library.file_tree import human_size
-from tools_library.vault_operations import scan_external_vault
+from tools_library.vault_operations import scan_external_vault, delete_empty_folders
 from widgets_library.tooltip import Tooltip
 
 
@@ -126,6 +126,13 @@ class FilterExternalVaultPopup:
         foot.pack(fill=tk.X)
         tk.Button(foot, text="← Back to Vault Tree",
                   command=self._on_close).pack(side=tk.RIGHT)
+        btn_empty = tk.Button(foot, text="Delete EV empty folders",
+                              command=self._delete_empty_folders)
+        btn_empty.pack(side=tk.LEFT)
+        Tooltip(btn_empty,
+                "Remove every empty folder from the external vault.\n"
+                "A folder is only deleted when it contains no files at all — "
+                "including hidden files and files not tracked by this vault.")
 
     # ── Scan ──────────────────────────────────────────────────────────────────
 
@@ -391,6 +398,18 @@ class FilterExternalVaultPopup:
 
         if not self._matches:
             self._delete_btn.config(state=tk.DISABLED)
+
+    def _delete_empty_folders(self):
+        self._root.config(cursor="watch")
+        self._root.update_idletasks()
+        try:
+            deleted = delete_empty_folders(self._external_path)
+        finally:
+            self._root.config(cursor="")
+        n = len(deleted)
+        msg = f"Removed {n} empty folder(s) from the external vault." if n else "No empty folders found."
+        tracer.log(f"Delete EV empty folders: {n} removed from {self._external_path!r}")
+        messagebox.showinfo("Delete EV empty folders", msg, parent=self._root)
 
     # ── Misc ──────────────────────────────────────────────────────────────────
 

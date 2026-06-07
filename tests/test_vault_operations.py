@@ -6,7 +6,7 @@ import unittest
 from unittest import mock
 
 from tools_library.vault_operations import (
-    get_repetitions, is_external_inside_vault, filter_external_vault,
+    get_repetitions, paths_overlap, filter_external_vault,
     scan_external_vault,
 )
 from tools_library.pigmy_hash import compute_file_hash
@@ -54,7 +54,7 @@ class TestGetRepetitions(unittest.TestCase):
             self.assertEqual(len(reps), 2)
 
 
-class TestIsExternalInsideVault(unittest.TestCase):
+class TestPathsOverlap(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
         self.vault = os.path.join(self.tmp, "vault")
@@ -64,30 +64,35 @@ class TestIsExternalInsideVault(unittest.TestCase):
         shutil.rmtree(self.tmp)
 
     def test_equal_paths_rejected(self):
-        self.assertTrue(is_external_inside_vault(self.vault, self.vault))
+        self.assertTrue(paths_overlap(self.vault, self.vault))
 
-    def test_subdir_rejected(self):
+    def test_ev_inside_vault_rejected(self):
         subdir = os.path.join(self.vault, "sub")
-        self.assertTrue(is_external_inside_vault(self.vault, subdir))
+        self.assertTrue(paths_overlap(self.vault, subdir))
 
-    def test_deep_subdir_rejected(self):
+    def test_ev_deep_inside_vault_rejected(self):
         deep = os.path.join(self.vault, "a", "b", "c")
-        self.assertTrue(is_external_inside_vault(self.vault, deep))
+        self.assertTrue(paths_overlap(self.vault, deep))
+
+    def test_vault_inside_ev_rejected(self):
+        # EV is a parent of the vault — vault would be scanned and deleted
+        self.assertTrue(paths_overlap(self.vault, self.tmp))
+
+    def test_vault_deep_inside_ev_rejected(self):
+        grandparent = os.path.dirname(self.tmp)
+        self.assertTrue(paths_overlap(self.vault, grandparent))
 
     def test_sibling_accepted(self):
         sibling = os.path.join(self.tmp, "other")
-        self.assertFalse(is_external_inside_vault(self.vault, sibling))
-
-    def test_parent_accepted(self):
-        self.assertFalse(is_external_inside_vault(self.vault, self.tmp))
+        self.assertFalse(paths_overlap(self.vault, sibling))
 
     def test_unrelated_path_accepted(self):
-        self.assertFalse(is_external_inside_vault(self.vault, "/completely/different"))
+        self.assertFalse(paths_overlap(self.vault, "/completely/different"))
 
     def test_name_prefix_not_confused(self):
         # "/vault_backup" must not match "/vault"
         vault_backup = self.vault + "_backup"
-        self.assertFalse(is_external_inside_vault(self.vault, vault_backup))
+        self.assertFalse(paths_overlap(self.vault, vault_backup))
 
 
 class TestFilterExternalVault(unittest.TestCase):

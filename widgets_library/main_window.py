@@ -18,7 +18,7 @@ def _read_version():
         return "unknown"
 from tools_library.vault_operations import (
     delete_empty_folders, get_repetitions, get_folder_repetitions,
-    is_external_inside_vault,
+    paths_overlap,
 )
 from tools_library.drive_variables import kept_file as _KEPT_FILE, rules_file as _RULES_FILE
 from widgets_library.duplicates_review_popup import DuplicatesReviewPopup
@@ -350,15 +350,16 @@ class MainWindow:
         path = filedialog.askdirectory(title="Select external vault to filter")
         if not path:
             return
-        if is_external_inside_vault(self.vault_path, path):
+        if paths_overlap(self.vault_path, path):
             messagebox.showwarning(
                 "Invalid Selection",
-                "The selected folder is inside (or is) the current vault.\n\n"
-                "Please select a folder that is completely outside the vault "
-                "to avoid accidental deletions.",
+                "The selected folder overlaps with the current vault.\n\n"
+                "The external vault must be completely outside the vault — "
+                "it cannot be the same folder, inside the vault, or a parent "
+                "folder that contains the vault.",
                 parent=self.root,
             )
-            tracer.log(f"Rejected: external path {path!r} is inside vault {self.vault_path!r}")
+            tracer.log(f"Rejected: external path {path!r} overlaps with vault {self.vault_path!r}")
             return
 
         def builder(panel_frame):

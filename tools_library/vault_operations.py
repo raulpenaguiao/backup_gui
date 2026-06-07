@@ -5,11 +5,19 @@ import tools_library.tracer as tracer
 from tools_library.pigmy_hash import compute_file_hash
 
 
-def is_external_inside_vault(vault_path, external_path):
-    """Return True if external_path is inside or equal to vault_path."""
-    norm_vault = os.path.normpath(vault_path)
-    norm_ext = os.path.normpath(external_path)
-    return norm_ext == norm_vault or norm_ext.startswith(norm_vault + os.sep)
+def paths_overlap(vault_path, external_path):
+    """Return True if the two paths are the same or one contains the other.
+
+    Uses os.path.normcase so the comparison is case-insensitive on Windows
+    and case-sensitive on Unix, matching actual filesystem behaviour.
+    """
+    norm_vault = os.path.normcase(os.path.normpath(vault_path))
+    norm_ext = os.path.normcase(os.path.normpath(external_path))
+    return (
+        norm_ext == norm_vault
+        or norm_ext.startswith(norm_vault + os.sep)
+        or norm_vault.startswith(norm_ext + os.sep)
+    )
 
 
 def delete_empty_folders(vault_path):

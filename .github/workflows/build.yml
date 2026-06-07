@@ -63,6 +63,7 @@ jobs:
             --onefile \
             --windowed \
             --name PigmyBackup \
+            --add-data "VERSION:." \
             --distpath dist/${{ matrix.platform_dir }} \
             --workpath build/_pyinstaller \
             --specpath build \
