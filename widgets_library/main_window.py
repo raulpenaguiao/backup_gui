@@ -30,7 +30,7 @@ _SKIP = {".pigmy-hash", ".pigmy", _KEPT_FILE, _RULES_FILE}
 
 
 class MainWindow:
-    def __init__(self, root, vault_path, pigmyhash, sizes, file_counts, on_back, on_reindex):
+    def __init__(self, root, vault_path, pigmyhash, sizes, file_counts, on_back, on_reindex, indexed_at=None):
         self.root = root
         self.vault_path = vault_path
         self.pigmyhash = pigmyhash
@@ -38,6 +38,7 @@ class MainWindow:
         self.on_reindex = on_reindex
         self._sizes = sizes
         self._file_counts = file_counts
+        self._indexed_at = indexed_at
         self._path_map = {}
         self._tree_widget = None
         self._build()
@@ -314,6 +315,12 @@ class MainWindow:
     # ── Action handlers ───────────────────────────────────────────────────────
 
     def _delete_empty_folders(self):
+        if not messagebox.askyesno(
+            "Delete Empty Folders",
+            "Send all empty folders inside the vault to the recycle bin?",
+            parent=self.root,
+        ):
+            return
         self._clear()
         deleted = delete_empty_folders(self.vault_path)
         if deleted:
@@ -324,8 +331,17 @@ class MainWindow:
             self._log("No empty folders found.")
 
     def _review_duplicates(self):
-        folder_pairs = get_folder_repetitions(self.pigmyhash)
-        file_groups = get_repetitions(self.pigmyhash)
+        folder_pairs, stale_folders = get_folder_repetitions(self.pigmyhash, self._indexed_at)
+        file_groups, stale_files = get_repetitions(self.pigmyhash, self._indexed_at)
+        stale_count = stale_files + stale_folders
+        if stale_count:
+            messagebox.showwarning(
+                "Index may be stale",
+                f"{stale_count} file(s) or folder(s) were modified after the last index and "
+                f"have been excluded from duplicate review.\n\n"
+                f"Click Reindex to get an up-to-date view.",
+                parent=self.root,
+            )
         if not folder_pairs and not file_groups:
             self._show_tree()
             self._clear()

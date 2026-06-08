@@ -1,4 +1,5 @@
 import os
+import filecmp
 import queue
 import threading
 import tkinter as tk
@@ -100,16 +101,6 @@ class FilterExternalVaultPopup:
         Tooltip(self._delete_btn,
                 "Review then confirm deletion of the selected items (moved to system trash).")
 
-        self._unique_btn = tk.Button(ctrl, text="Keep unique copy",
-                                      command=self._keep_unique_copies,
-                                      state=tk.DISABLED)
-        self._unique_btn.pack(side=tk.RIGHT, padx=(0, 6))
-        Tooltip(self._unique_btn,
-                "Among all files in the external vault, keep only the first occurrence of each "
-                "duplicate group (sorted alphabetically by path) and move all other copies to trash.\n"
-                "Operates on the EV only — the drive is never touched.\n"
-                "Guarantees a single canonical copy of every file remains in the EV.")
-
         # Results treeview
         tv_frame = tk.Frame(self._win, padx=10, pady=2)
         tv_frame.pack(fill=tk.BOTH, expand=True)
@@ -144,6 +135,15 @@ class FilterExternalVaultPopup:
                 "Remove every empty folder from the external vault.\n"
                 "A folder is only deleted when it contains no files at all — "
                 "including hidden files and files not tracked by this vault.")
+        self._unique_btn = tk.Button(foot, text="Delete extra copies in EV",
+                                      command=self._keep_unique_copies,
+                                      state=tk.DISABLED)
+        self._unique_btn.pack(side=tk.LEFT, padx=(8, 0))
+        Tooltip(self._unique_btn,
+                "Among all files in the external vault, keep only the first occurrence of each "
+                "duplicate group (sorted alphabetically by path) and move all other copies to trash.\n"
+                "Operates on the EV only — the vault is never touched.\n"
+                "Guarantees a single canonical copy of every file remains in the EV.")
 
     # ── Scan ──────────────────────────────────────────────────────────────────
 
@@ -376,25 +376,78 @@ class FilterExternalVaultPopup:
 
     def _do_delete(self, files, detail_win):
         detail_win.destroy()
+        if not files:
+            return
+
+        total = len(files)
+        stop_event = threading.Event()
+        msg_q = queue.Queue()
+
+        dlg = tk.Toplevel(self._root)
+        dlg.title("Deleting files…")
+        dlg.geometry("440x130")
+        dlg.transient(self._root)
+        dlg.grab_set()
+        dlg.resizable(False, False)
+
+        def on_cancel():
+            stop_event.set()
+            cancel_btn.config(state=tk.DISABLED, text="Cancelling…")
+        dlg.protocol("WM_DELETE_WINDOW", on_cancel)
+
+        tk.Label(dlg, text="Moving files to trash…",
+                 font=("Helvetica", 11, "bold"), pady=8).pack()
+        bar = ttk.Progressbar(dlg, mode="determinate", length=400, maximum=total)
+        bar.pack(padx=20)
+        status_lbl = tk.Label(dlg, text=f"0 / {total:,}", fg="#555", font=("Helvetica", 9))
+        status_lbl.pack(pady=2)
+        cancel_btn = tk.Button(dlg, text="Cancel", command=on_cancel)
+        cancel_btn.pack(pady=4)
+
         self._root.config(cursor="watch")
-        self._root.update()
-        deleted = []
-        errors = []
-        try:
+
+        def worker():
+            deleted = []
+            errors = []
             for f in files:
+                if stop_event.is_set():
+                    break
                 try:
                     send2trash.send2trash(os.path.normpath(f))
                     deleted.append(f)
                     tracer.log(f"Deleted from external vault: {f!r}")
-                    if self._tree.exists(f):
-                        self._tree.delete(f)
                 except Exception as e:
                     errors.append(f)
-                    tracer.log(f"Error deleting {f!r}: {e}")
-        finally:
-            self._root.config(cursor="")
+                    tracer.log_error(f"Error deleting {f!r}: {e}")
+                msg_q.put(("progress", len(deleted) + len(errors)))
+            msg_q.put(("done", deleted, errors))
 
-        # Remove now-empty folder entries
+        threading.Thread(target=worker, daemon=True).start()
+
+        def poll():
+            try:
+                while True:
+                    msg = msg_q.get_nowait()
+                    if msg[0] == "progress":
+                        _, n = msg
+                        bar["value"] = n
+                        status_lbl.config(text=f"{n:,} / {total:,}")
+                    elif msg[0] == "done":
+                        _, deleted, errors = msg
+                        dlg.destroy()
+                        self._root.config(cursor="")
+                        self._finish_delete(deleted, errors)
+                        return
+            except queue.Empty:
+                pass
+            dlg.after(80, poll)
+
+        poll()
+
+    def _finish_delete(self, deleted, errors):
+        for f in deleted:
+            if self._tree.exists(f):
+                self._tree.delete(f)
         for iid in list(self._tree.get_children()):
             if iid.startswith("__dir__") and not self._tree.get_children(iid):
                 self._tree.delete(iid)
@@ -403,10 +456,11 @@ class FilterExternalVaultPopup:
         self._matches = [m for m in self._matches if m not in deleted_set]
         self._update_match_label()
 
-        msg = f"Moved {len(deleted):,} file(s) to trash."
+        n = len(deleted)
+        msg = f"Moved {n:,} file(s) to trash."
         if errors:
-            msg += f"\n{len(errors)} error(s) — check log for details."
-        tracer.log(f"Filter external vault: {len(deleted)} deleted, {len(errors)} errors.")
+            msg += f"\n{len(errors)} error(s) — check error log for details."
+        tracer.log(f"Filter external vault: {n} deleted, {len(errors)} errors.")
         messagebox.showinfo("Done", msg, parent=self._root)
 
         if not self._matches:
@@ -414,43 +468,59 @@ class FilterExternalVaultPopup:
 
     def _keep_unique_copies(self):
         if not self._all_files:
-            messagebox.showinfo("Keep unique copy", "No EV files to process.",
+            messagebox.showinfo("Delete extra copies in EV", "No EV files to process.",
                                 parent=self._root)
             return
 
         files_snapshot = list(self._all_files)
         total = len(files_snapshot)
+        stop_event = threading.Event()
+        msg_q = queue.Queue()
 
         dlg = tk.Toplevel(self._root)
-        dlg.title("Finding duplicates")
-        dlg.geometry("420x110")
+        dlg.title("Finding duplicates in EV…")
+        dlg.geometry("420x140")
         dlg.transient(self._root)
         dlg.grab_set()
         dlg.resizable(False, False)
-        dlg.protocol("WM_DELETE_WINDOW", lambda: None)
+
+        def on_cancel():
+            stop_event.set()
+            cancel_btn.config(state=tk.DISABLED, text="Cancelling…")
+        dlg.protocol("WM_DELETE_WINDOW", on_cancel)
 
         tk.Label(dlg, text="Analysing EV files…",
-                 font=("Helvetica", 11, "bold"), pady=10).pack()
+                 font=("Helvetica", 11, "bold"), pady=8).pack()
         bar = ttk.Progressbar(dlg, mode="determinate", length=380, maximum=total)
         bar.pack(padx=20)
         status_lbl = tk.Label(dlg, text="", fg="#555", font=("Helvetica", 9))
-        status_lbl.pack(pady=4)
+        status_lbl.pack(pady=2)
+        cancel_btn = tk.Button(dlg, text="Cancel", command=on_cancel)
+        cancel_btn.pack(pady=4)
 
         self._root.config(cursor="watch")
-        self._root.update()
-
-        msg_q = queue.Queue()
 
         def worker():
             hash_to_files = {}
             for i, path in enumerate(sorted(files_snapshot)):
+                if stop_event.is_set():
+                    msg_q.put(("cancelled",))
+                    return
                 h = compute_file_hash(path)
                 if h is not None:
                     hash_to_files.setdefault(h, []).append(path)
                 msg_q.put(("progress", i + 1))
             to_delete = []
             for paths in hash_to_files.values():
-                to_delete.extend(paths[1:])
+                if len(paths) < 2:
+                    continue
+                keeper = paths[0]
+                for candidate in paths[1:]:
+                    try:
+                        if filecmp.cmp(keeper, candidate, shallow=False):
+                            to_delete.append(candidate)
+                    except OSError as e:
+                        tracer.log_error(f"Keep-unique filecmp error {candidate!r}: {e}")
             msg_q.put(("done", sorted(to_delete)))
 
         threading.Thread(target=worker, daemon=True).start()
@@ -462,7 +532,11 @@ class FilterExternalVaultPopup:
                     if msg[0] == "progress":
                         _, i = msg
                         bar["value"] = i
-                        status_lbl.config(text=f"Hashing {i}/{total}…")
+                        status_lbl.config(text=f"Hashing {i:,} / {total:,}…")
+                    elif msg[0] == "cancelled":
+                        dlg.destroy()
+                        self._root.config(cursor="")
+                        return
                     elif msg[0] == "done":
                         _, to_delete = msg
                         dlg.destroy()
@@ -533,33 +607,40 @@ class FilterExternalVaultPopup:
                   command=lambda: self._do_delete(files, detail)).pack(side=tk.RIGHT)
 
     def _delete_empty_folders(self):
+        stop_event = threading.Event()
+        msg_q = queue.Queue()
+
         dlg = tk.Toplevel(self._root)
         dlg.title("Deleting empty folders")
-        dlg.geometry("460x140")
+        dlg.geometry("460x165")
         dlg.transient(self._root)
         dlg.grab_set()
         dlg.resizable(False, False)
-        dlg.protocol("WM_DELETE_WINDOW", lambda: None)
+
+        def on_cancel():
+            stop_event.set()
+            cancel_btn.config(state=tk.DISABLED, text="Cancelling…")
+        dlg.protocol("WM_DELETE_WINDOW", on_cancel)
 
         tk.Label(dlg, text="Deleting empty folders…",
-                 font=("Helvetica", 11, "bold"), pady=10).pack()
+                 font=("Helvetica", 11, "bold"), pady=8).pack()
         bar = ttk.Progressbar(dlg, mode="indeterminate", length=420)
         bar.pack(padx=20)
         bar.start(25)
         status_lbl = tk.Label(dlg, text="Starting…", fg="#555", font=("Helvetica", 9))
-        status_lbl.pack(pady=4)
+        status_lbl.pack(pady=2)
         cur_lbl = tk.Label(dlg, text="", fg="#888", font=("Courier", 8))
         cur_lbl.pack(padx=10, fill=tk.X)
+        cancel_btn = tk.Button(dlg, text="Cancel", command=on_cancel)
+        cancel_btn.pack(pady=4)
 
         self._root.config(cursor="watch")
-        self._root.update()
-
-        msg_q = queue.Queue()
 
         def worker():
             def cb(phase, n_deleted, current_dir):
                 msg_q.put(("progress", phase, n_deleted, current_dir))
-            result = delete_empty_folders(self._external_path, progress_callback=cb)
+            result = delete_empty_folders(self._external_path, progress_callback=cb,
+                                          stop_event=stop_event)
             msg_q.put(("done", result))
 
         threading.Thread(target=worker, daemon=True).start()
