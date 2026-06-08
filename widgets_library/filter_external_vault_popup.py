@@ -105,9 +105,10 @@ class FilterExternalVaultPopup:
                                       state=tk.DISABLED)
         self._unique_btn.pack(side=tk.RIGHT, padx=(0, 6))
         Tooltip(self._unique_btn,
-                "Among the matched files, keep only the first occurrence of each duplicate "
-                "group (sorted alphabetically by path) and move all other copies to trash.\n"
-                "Guarantees a single canonical copy of every file remains in the same location.")
+                "Among all files in the external vault, keep only the first occurrence of each "
+                "duplicate group (sorted alphabetically by path) and move all other copies to trash.\n"
+                "Operates on the EV only — the drive is never touched.\n"
+                "Guarantees a single canonical copy of every file remains in the EV.")
 
         # Results treeview
         tv_frame = tk.Frame(self._win, padx=10, pady=2)
@@ -194,7 +195,6 @@ class FilterExternalVaultPopup:
             self._add_file_row(file_path, size)
             self._update_match_label()
             self._delete_btn.config(state=tk.NORMAL)
-            self._unique_btn.config(state=tk.NORMAL)
         elif kind == "done":
             _, all_files, matched = msg
             self._all_files = all_files
@@ -208,6 +208,8 @@ class FilterExternalVaultPopup:
             self._cancel_btn.config(state=tk.DISABLED)
             if matched:
                 self._group_btn.config(state=tk.NORMAL)
+            if all_files:
+                self._unique_btn.config(state=tk.NORMAL)
             self._update_match_label()
 
     def _add_file_row(self, file_path, size):
@@ -411,12 +413,12 @@ class FilterExternalVaultPopup:
             self._delete_btn.config(state=tk.DISABLED)
 
     def _keep_unique_copies(self):
-        if not self._matches:
-            messagebox.showinfo("Keep unique copy", "No matched files to process.",
+        if not self._all_files:
+            messagebox.showinfo("Keep unique copy", "No EV files to process.",
                                 parent=self._root)
             return
 
-        files_snapshot = list(self._matches)
+        files_snapshot = list(self._all_files)
         total = len(files_snapshot)
 
         dlg = tk.Toplevel(self._root)
@@ -427,7 +429,7 @@ class FilterExternalVaultPopup:
         dlg.resizable(False, False)
         dlg.protocol("WM_DELETE_WINDOW", lambda: None)
 
-        tk.Label(dlg, text="Analysing matched files…",
+        tk.Label(dlg, text="Analysing EV files…",
                  font=("Helvetica", 11, "bold"), pady=10).pack()
         bar = ttk.Progressbar(dlg, mode="determinate", length=380, maximum=total)
         bar.pack(padx=20)
@@ -476,8 +478,8 @@ class FilterExternalVaultPopup:
     def _confirm_unique_delete(self, files):
         if not files:
             messagebox.showinfo("Keep unique copy",
-                                "No duplicate copies found among matched files.\n"
-                                "All matched files already have unique content.",
+                                "No duplicate copies found in the external vault.\n"
+                                "All EV files already have unique content.",
                                 parent=self._root)
             return
 
@@ -497,9 +499,9 @@ class FilterExternalVaultPopup:
         detail.resizable(True, True)
 
         tk.Label(detail,
-                 text=(f"The following {len(files):,} duplicate file(s)  "
+                 text=(f"The following {len(files):,} duplicate EV file(s)  "
                        f"({human_size(total_size)})  will be moved to trash:\n"
-                       "(first occurrence alphabetically is kept; all other copies deleted)"),
+                       "(first occurrence alphabetically is kept; all other copies deleted — drive is not affected)"),
                  padx=10, pady=8, anchor=tk.W,
                  font=("Helvetica", 10)).pack(fill=tk.X)
 
