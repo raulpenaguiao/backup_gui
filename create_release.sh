@@ -11,11 +11,11 @@ if [[ ! "$new_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit 1
 fi
 
-if [[ "$new_version" == "$current" ]]; then
-    echo "Version unchanged — skipping commit and push, re-tagging v$new_version"
+echo "$new_version" > VERSION
+git add VERSION
+if git diff --cached --quiet; then
+    echo "Version unchanged — nothing new to commit, re-tagging v$new_version"
 else
-    echo "$new_version" > VERSION
-    git add VERSION
     git commit -m "Bump version to $new_version"
     git push origin main
 fi
