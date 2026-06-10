@@ -2,6 +2,7 @@ import os
 import stat
 import hashlib
 import json
+import time
 import filecmp
 from collections import deque
 import tools_library.tracer as tracer
@@ -206,18 +207,34 @@ def _same_content(path1, path2):
 
 
 def save_pigmy_hash(vault_path, pigmyhash):
+    """Write pigmyhash atomically and return the indexed_at timestamp embedded in the file.
+
+    Writes to a sibling temp file first, then renames it over the target so that
+    a crash mid-write never leaves a corrupt/truncated hash file on disk.
+    """
     path = os.path.join(vault_path, drive_variables.pigmy_hash_file)
-    with open(path, "w", encoding='utf-8') as f:
-        json.dump(pigmyhash, f)
+    tmp_path = path + ".tmp"
+    indexed_at = time.time()
+    data = {"__indexed_at__": indexed_at}
+    data.update(pigmyhash)
+    with open(tmp_path, "w", encoding='utf-8') as f:
+        json.dump(data, f)
+    os.replace(tmp_path, path)
+    return indexed_at
 
 
 def load_pigmy_hash(vault_path):
+    """Return (pigmyhash, indexed_at). indexed_at is None for old files without the timestamp."""
     path = os.path.join(vault_path, drive_variables.pigmy_hash_file)
     with open(path, "r", encoding='utf-8') as f:
         data = json.load(f)
+    indexed_at = data.pop("__indexed_at__", None)
     # Normalize separators — tkinter returns forward-slash paths on Windows,
     # which mix with os.sep when scandir builds child paths, breaking send2trash.
-    return {
-        h: [[os.path.normpath(p) for p in group] for group in groups]
-        for h, groups in data.items()
-    }
+    return (
+        {
+            h: [[os.path.normpath(p) for p in group] for group in groups]
+            for h, groups in data.items()
+        },
+        indexed_at,
+    )

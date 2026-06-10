@@ -5,7 +5,7 @@ from tools_library.tracer import log_folder_path, current_log_path
 
 
 class LogViewer:
-    """Manual-refresh log viewer with per-minute file selector."""
+    """Log viewer with separate dropdowns for info logs (tracer_*) and error logs (error_*)."""
 
     def __init__(self, root):
         self._root = root
@@ -17,27 +17,35 @@ class LogViewer:
         self._build()
         self._refresh()
 
-    def _available_logs(self):
+    def _logs_by_prefix(self, prefix):
         try:
-            names = sorted(
+            return sorted(
                 [e.name for e in os.scandir(log_folder_path)
-                 if e.is_file() and e.name.startswith("tracer_") and e.name.endswith(".log")],
+                 if e.is_file() and e.name.startswith(prefix) and e.name.endswith(".log")],
                 reverse=True,
             )
         except FileNotFoundError:
-            names = []
-        return names
+            return []
 
     def _build(self):
         ctrl = tk.Frame(self._win, padx=8, pady=6)
         ctrl.pack(fill=tk.X)
 
-        tk.Label(ctrl, text="File:", fg="#555").pack(side=tk.LEFT)
-        self._file_var = tk.StringVar()
-        self._combo = ttk.Combobox(ctrl, textvariable=self._file_var,
-                                    state="readonly", width=22)
-        self._combo.pack(side=tk.LEFT, padx=(4, 8))
-        self._combo.bind("<<ComboboxSelected>>", lambda _: self._load_selected())
+        tk.Label(ctrl, text="Info:", fg="#555").pack(side=tk.LEFT)
+        self._info_var = tk.StringVar()
+        self._info_combo = ttk.Combobox(ctrl, textvariable=self._info_var,
+                                         state="readonly", width=22)
+        self._info_combo.pack(side=tk.LEFT, padx=(4, 8))
+        self._info_combo.bind("<<ComboboxSelected>>",
+                               lambda _: self._load_file(self._info_var.get()))
+
+        tk.Label(ctrl, text="Errors:", fg="#555").pack(side=tk.LEFT)
+        self._error_var = tk.StringVar()
+        self._error_combo = ttk.Combobox(ctrl, textvariable=self._error_var,
+                                          state="readonly", width=22)
+        self._error_combo.pack(side=tk.LEFT, padx=(4, 8))
+        self._error_combo.bind("<<ComboboxSelected>>",
+                                lambda _: self._load_file(self._error_var.get()))
 
         tk.Label(ctrl, text=log_folder_path, fg="#888",
                  font=("Courier", 8)).pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -63,15 +71,24 @@ class LogViewer:
         hsb.grid(row=1, column=0, sticky="ew")
 
     def _refresh(self):
-        files = self._available_logs()
-        self._combo["values"] = files
-        current = os.path.basename(current_log_path())
-        if self._file_var.get() not in files:
-            self._file_var.set(current if current in files else (files[0] if files else ""))
-        self._load_selected()
+        info_files = self._logs_by_prefix("tracer_")
+        error_files = self._logs_by_prefix("error_")
 
-    def _load_selected(self):
-        name = self._file_var.get()
+        self._info_combo["values"] = info_files
+        self._error_combo["values"] = error_files
+
+        # Default selection: keep current if still valid, else newest
+        current_info = os.path.basename(current_log_path())
+        if self._info_var.get() not in info_files:
+            self._info_var.set(current_info if current_info in info_files
+                               else (info_files[0] if info_files else ""))
+        if self._error_var.get() not in error_files:
+            self._error_var.set(error_files[0] if error_files else "")
+
+        # Open the info log by default
+        self._load_file(self._info_var.get())
+
+    def _load_file(self, name):
         if not name:
             content = "(no log files found)"
         else:

@@ -42,19 +42,19 @@ class App:
             try:
                 skipped = []
                 if has_hash:
-                    pigmyhash = load_pigmy_hash(vault_path)
+                    pigmyhash, indexed_at = load_pigmy_hash(vault_path)
                 else:
                     pigmyhash, skipped = index_vault(vault_path, progress_tracker, cancel_token)
                     if pigmyhash is None:
                         self.root.after(0, lambda: self._on_cancelled(loading))
                         return
-                    save_pigmy_hash(vault_path, pigmyhash)
+                    indexed_at = save_pigmy_hash(vault_path, pigmyhash)
                 sizes, file_counts = build_size_index(vault_path, progress_tracker, cancel_token)
                 if cancel_token.is_set():
                     self.root.after(0, lambda: self._on_cancelled(loading))
                     return
                 self.root.after(0, lambda: self._on_ready(
-                    loading, vault_path, pigmyhash, sizes, file_counts, skipped))
+                    loading, vault_path, pigmyhash, sizes, file_counts, indexed_at, skipped))
             except Exception as e:
                 tracer.log(f"Error opening vault: {e}")
                 self.root.after(0, loading.destroy)
@@ -72,13 +72,13 @@ class App:
                 if pigmyhash is None:
                     self.root.after(0, lambda: self._on_cancelled(loading))
                     return
-                save_pigmy_hash(vault_path, pigmyhash)
+                indexed_at = save_pigmy_hash(vault_path, pigmyhash)
                 sizes, file_counts = build_size_index(vault_path, progress_tracker, cancel_token)
                 if cancel_token.is_set():
                     self.root.after(0, lambda: self._on_cancelled(loading))
                     return
                 self.root.after(0, lambda: self._on_ready(
-                    loading, vault_path, pigmyhash, sizes, file_counts, skipped))
+                    loading, vault_path, pigmyhash, sizes, file_counts, indexed_at, skipped))
             except Exception as e:
                 tracer.log(f"Error reindexing vault: {e}")
                 self.root.after(0, loading.destroy)
@@ -89,7 +89,7 @@ class App:
         loading.destroy()
         self._show_vault_picker()
 
-    def _on_ready(self, loading, vault_path, pigmyhash, sizes, file_counts, skipped=None):
+    def _on_ready(self, loading, vault_path, pigmyhash, sizes, file_counts, indexed_at=None, skipped=None):
         loading.destroy()
         if self._view:
             self._view.destroy()
@@ -97,6 +97,7 @@ class App:
             self.root, vault_path, pigmyhash, sizes, file_counts,
             on_back=self._show_vault_picker,
             on_reindex=lambda: self._reindex_vault(vault_path),
+            indexed_at=indexed_at,
         )
         if skipped:
             self._show_skipped_warning(skipped)

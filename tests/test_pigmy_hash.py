@@ -58,17 +58,21 @@ class TestPigmyHashRoundtrip(unittest.TestCase):
             "def456": [["/e/f.txt"]],
         }
         save_pigmy_hash(self.tmp, original)
-        loaded = load_pigmy_hash(self.tmp)
+        loaded, indexed_at = load_pigmy_hash(self.tmp)
         # load_pigmy_hash normalizes separators, so compare against normpath'd expected
         expected = {
             h: [[os.path.normpath(p) for p in group] for group in groups]
             for h, groups in original.items()
         }
         self.assertEqual(expected, loaded)
+        self.assertIsNotNone(indexed_at)
+        self.assertIsInstance(indexed_at, float)
 
     def test_empty_hash_roundtrip(self):
         save_pigmy_hash(self.tmp, {})
-        self.assertEqual(load_pigmy_hash(self.tmp), {})
+        loaded, indexed_at = load_pigmy_hash(self.tmp)
+        self.assertEqual(loaded, {})
+        self.assertIsNotNone(indexed_at)
 
 
 class TestIndexVaultSkipped(unittest.TestCase):

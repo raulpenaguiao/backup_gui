@@ -20,7 +20,7 @@ def paths_overlap(vault_path, external_path):
     )
 
 
-def delete_empty_folders(vault_path, progress_callback=None):
+def delete_empty_folders(vault_path, progress_callback=None, stop_event=None):
     """
     Two-phase algorithm to remove empty directories inside vault_path.
 
@@ -39,11 +39,14 @@ def delete_empty_folders(vault_path, progress_callback=None):
       phase="scan"   — emitted for every directory examined; deleted_count is 0
       phase="delete" — emitted after each top-level deletion; deleted_count is
                        the running total including all nested dirs
+    stop_event: threading.Event — stops cleanly when set (between operations).
     """
     # ── Phase 1: identify directories that are (or will become) empty ─────────
     will_delete = set()
 
     for dirpath, dirnames, filenames in os.walk(vault_path, topdown=False):
+        if stop_event and stop_event.is_set():
+            break
         if dirpath == vault_path:
             continue
         if progress_callback:
@@ -63,6 +66,8 @@ def delete_empty_folders(vault_path, progress_callback=None):
 
     deleted = []
     for dirpath in top_level:
+        if stop_event and stop_event.is_set():
+            break
         try:
             send2trash.send2trash(os.path.normpath(dirpath))
             gone = [d for d in will_delete
@@ -77,26 +82,71 @@ def delete_empty_folders(vault_path, progress_callback=None):
     return deleted
 
 
-def get_repetitions(pigmyhash):
-    """Return groups (list of paths) where more than one file shares the same content."""
+def _is_path_stale(path, indexed_at):
+    """Return True if path's mtime is newer than indexed_at."""
+    try:
+        return os.path.getmtime(path) > indexed_at
+    except OSError:
+        return False
+
+
+def _folder_is_stale(folder_path, indexed_at):
+    """Return True if any file in folder_path's subtree has mtime newer than indexed_at."""
+    try:
+        for dirpath, _, filenames in os.walk(folder_path):
+            for fn in filenames:
+                if _is_path_stale(os.path.join(dirpath, fn), indexed_at):
+                    return True
+    except OSError:
+        pass
+    return False
+
+
+def get_repetitions(pigmyhash, indexed_at=None):
+    """Return (groups, stale_count).
+
+    groups: lists of paths where more than one file shares the same content.
+    stale_count: number of paths skipped because their mtime is newer than indexed_at,
+                 meaning the index may no longer reflect their content.
+    """
     reps = []
+    stale_count = 0
     for groups in pigmyhash.values():
         for group in groups:
-            files = [p for p in group if os.path.isfile(p)]
+            files = []
+            for p in group:
+                if not os.path.isfile(p):
+                    continue
+                if indexed_at is not None and _is_path_stale(p, indexed_at):
+                    stale_count += 1
+                    continue
+                files.append(p)
             if len(files) > 1:
                 reps.append(files)
-    return reps
+    return reps, stale_count
 
 
-def get_folder_repetitions(pigmyhash):
-    """Return groups (list of folder paths) where folders have exactly identical contents."""
+def get_folder_repetitions(pigmyhash, indexed_at=None):
+    """Return (groups, stale_count).
+
+    groups: lists of folder paths where folders have exactly identical contents.
+    stale_count: number of folders skipped because a file inside was modified after indexed_at.
+    """
     reps = []
+    stale_count = 0
     for groups in pigmyhash.values():
         for group in groups:
-            dirs = [p for p in group if os.path.isdir(p)]
+            dirs = []
+            for p in group:
+                if not os.path.isdir(p):
+                    continue
+                if indexed_at is not None and _folder_is_stale(p, indexed_at):
+                    stale_count += 1
+                    continue
+                dirs.append(p)
             if len(dirs) > 1:
                 reps.append(dirs)
-    return reps
+    return reps, stale_count
 
 
 def scan_external_vault(pigmyhash, external_path, stop_event=None,

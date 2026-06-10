@@ -15,10 +15,14 @@ from tools_library.pigmy_hash import compute_file_hash
 class TestGetRepetitions(unittest.TestCase):
     def test_no_repetitions(self):
         pigmyhash = {"h1": [["/a/b.txt"]], "h2": [["/c/d.txt"]]}
-        self.assertEqual(get_repetitions(pigmyhash), [])
+        reps, stale = get_repetitions(pigmyhash)
+        self.assertEqual(reps, [])
+        self.assertEqual(stale, 0)
 
     def test_empty_hash(self):
-        self.assertEqual(get_repetitions({}), [])
+        reps, stale = get_repetitions({})
+        self.assertEqual(reps, [])
+        self.assertEqual(stale, 0)
 
     def test_with_real_duplicate_files(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -27,10 +31,11 @@ class TestGetRepetitions(unittest.TestCase):
             open(f1, "w").close()
             open(f2, "w").close()
             pigmyhash = {"h1": [[f1, f2]]}
-            reps = get_repetitions(pigmyhash)
+            reps, stale = get_repetitions(pigmyhash)
             self.assertEqual(len(reps), 1)
             self.assertIn(f1, reps[0])
             self.assertIn(f2, reps[0])
+            self.assertEqual(stale, 0)
 
     def test_group_with_one_existing_file_not_counted(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -38,7 +43,7 @@ class TestGetRepetitions(unittest.TestCase):
             open(f1, "w").close()
             # second path does not exist
             pigmyhash = {"h1": [[f1, "/nonexistent/b.txt"]]}
-            reps = get_repetitions(pigmyhash)
+            reps, stale = get_repetitions(pigmyhash)
             self.assertEqual(reps, [])
 
     def test_multiple_groups(self):
@@ -50,8 +55,36 @@ class TestGetRepetitions(unittest.TestCase):
                 "h1": [[files[0], files[1]]],
                 "h2": [[files[2], files[3]]],
             }
-            reps = get_repetitions(pigmyhash)
+            reps, stale = get_repetitions(pigmyhash)
             self.assertEqual(len(reps), 2)
+
+    def test_stale_file_excluded(self):
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            f1 = os.path.join(tmp, "a.txt")
+            f2 = os.path.join(tmp, "b.txt")
+            open(f1, "w").close()
+            open(f2, "w").close()
+            # indexed_at in the past so both files appear stale
+            indexed_at = os.path.getmtime(f1) - 1
+            pigmyhash = {"h1": [[f1, f2]]}
+            reps, stale = get_repetitions(pigmyhash, indexed_at=indexed_at)
+            self.assertEqual(reps, [])
+            self.assertEqual(stale, 2)
+
+    def test_fresh_index_shows_no_stale(self):
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            f1 = os.path.join(tmp, "a.txt")
+            f2 = os.path.join(tmp, "b.txt")
+            open(f1, "w").close()
+            open(f2, "w").close()
+            # indexed_at in the future so both files appear current
+            indexed_at = time.time() + 60
+            pigmyhash = {"h1": [[f1, f2]]}
+            reps, stale = get_repetitions(pigmyhash, indexed_at=indexed_at)
+            self.assertEqual(len(reps), 1)
+            self.assertEqual(stale, 0)
 
 
 class TestPathsOverlap(unittest.TestCase):
