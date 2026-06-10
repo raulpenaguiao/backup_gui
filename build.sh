@@ -68,6 +68,7 @@ python3 -m PyInstaller \
   --onefile \
   --windowed \
   --name "PigmyBackup" \
+  --hidden-import PIL._tkinter_finder \
   --distpath "$PLATFORM_DIR" \
   --workpath "build/_pyinstaller" \
   --specpath "build" \
