@@ -11,10 +11,23 @@ if [[ ! "$new_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit 1
 fi
 
-echo "$new_version" > VERSION
-git add VERSION
-git commit -m "Bump version to $new_version"
-git push origin main
+if [[ "$new_version" == "$current" ]]; then
+    echo "Version unchanged — skipping commit and push, re-tagging v$new_version"
+else
+    echo "$new_version" > VERSION
+    git add VERSION
+    git commit -m "Bump version to $new_version"
+    git push origin main
+fi
+
+# Delete existing tag locally and remotely so CI/CD fires fresh
+if git tag -l "v$new_version" | grep -q .; then
+    git tag -d "v$new_version"
+fi
+if git ls-remote --tags origin "refs/tags/v$new_version" | grep -q .; then
+    git push origin --delete "v$new_version"
+fi
+
 git tag "v$new_version"
 git push origin "v$new_version"
 echo "Released v$new_version"
