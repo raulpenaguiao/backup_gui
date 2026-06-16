@@ -122,9 +122,9 @@ class FolderComparisonPopup:
     def _delete_folder(self, path):
         try:
             send2trash.send2trash(path)
-            tracer.log(f"Sent to trash: {path}")
+            tracer.log(f"Sent to trash: {tracer.pid(path)}", trace_level=5)
         except Exception as e:
-            tracer.log(f"Error deleting {path}: {e}")
+            tracer.log_error(f"Error deleting {path!r}: {e}")
         self._pairs.pop(self._index)
         if not self._pairs:
             self.popup.destroy()

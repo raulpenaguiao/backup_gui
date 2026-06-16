@@ -192,12 +192,12 @@ class BackupGUI:
             full_path = os.path.join(path, drive_variables.drive_folder_info)
             root.set_drive_buttons(os.path.exists(full_path))
         except Exception as e:
-            tracer.log(f"Error 32101: {e}")
+            tracer.log_error(f"Error 32101: {e}")
     #endregion
 
     #region design manipulation
     def set_drive_buttons(root, state):
-        tracer.log("")
+        tracer.log("", trace_level=2)
         if state:
             state = "active"
         else:
@@ -207,40 +207,40 @@ class BackupGUI:
             root.buttonCreateUniques.config(state=state)
             root.buttonCreateStatistics.config(state=state)
         except Exception as e:
-            tracer.log(f"Error 83102: {e}")
+            tracer.log_error(f"Error 83102: {e}")
     #endregion
 
     #region Button click functions
     def buttonCreateDatabase_click(root):
-        tracer.log("")
+        tracer.log("", trace_level=2)
         loading_popup = None
         try:
             _set_busy_cursor(root.rootTK)
             root.rootTK.update_idletasks()  # flush cursor change before heavy work starts
             progress_tracker = ProgressTracker(name="File Listing", unit="files")
-            tracer.log(progress_tracker.name)
-            tracer.log(progress_tracker.unit)
-            tracer.log(progress_tracker.loaded)
+            tracer.log(progress_tracker.name, trace_level=2)
+            tracer.log(progress_tracker.unit, trace_level=2)
+            tracer.log(progress_tracker.loaded, trace_level=2)
             loading_popup = LoadingPopup(root.rootTK, progress_tracker)
             _set_busy_cursor(loading_popup.popup)  # propagate to popup window
-            tracer.log("")
+            tracer.log("", trace_level=2)
             root.rootTK.update()
 
-            tracer.log("")
+            tracer.log("", trace_level=2)
             path = root.dropdownDrives.get()
-            tracer.log(f"The path was fetched at {path}")
+            tracer.log(f"The path was fetched at {path}", trace_level=2)
             toolbox.create_database(path, progress_tracker)
-            tracer.log(f"Database created at {path}")
+            tracer.log(f"Database created at {path}", trace_level=2)
             root.set_drive_buttons(True)
         except Exception as e:
-            tracer.log(f"An error occurred {e}")
+            tracer.log_error(f"An error occurred {e}")
         finally:
             if loading_popup is not None:
                 loading_popup.popup.destroy()
             _clear_cursor(root.rootTK)
 
     def buttonAddDriveLocation_click(root):
-        tracer.log("")
+        tracer.log("", trace_level=2)
         try:
             # Create a new popup window
             popup = tk.Toplevel(root.rootTK)
@@ -260,13 +260,13 @@ class BackupGUI:
             def confirm_add_drive():
                 try:
                     drive_path = get_text_field(text_field)
-                    tracer.log(f"Drive '{drive_path}' to be added.")
+                    tracer.log(f"Drive '{drive_path}' to be added.", trace_level=2)
                     drive_variables.drives.append({'location':drive_path})
                     root.dropdownDrives['values'] = [d['location'] for d in drive_variables.drives if os.path.exists(d['location'])]
                     dbs.update_drives_list(drive_variables.drives)
-                    tracer.log(f"Drive '{drive_path}' added successfully.")
+                    tracer.log(f"Drive '{drive_path}' added successfully.", trace_level=2)
                 except ValueError as e:
-                    tracer.log(str(e))
+                    tracer.log_error(str(e))
                 popup.destroy()
 
             button_confirm = tk.Button(popup, text="Add", command=confirm_add_drive)
@@ -276,17 +276,17 @@ class BackupGUI:
             button_cancel = tk.Button(popup, text="Cancel", command=popup.destroy)
             button_cancel.grid(row=3, column=0, columnspan=2, pady=10)
         except Exception as e:
-            tracer.log(f"Error 16425: {e}")
+            tracer.log_error(f"Error 16425: {e}")
     
     def buttonRemoveDrive_click(root):
-        tracer.log("")
+        tracer.log("", trace_level=2)
         try:
             #Get selected drive name
             selected_drive = root.dropdownDrives.get()
             if selected_drive:
-                tracer.log(f"Selected drive: {selected_drive}")
+                tracer.log(f"Selected drive: {selected_drive}", trace_level=2)
             else:
-                tracer.log("No drive selected.")
+                tracer.log("No drive selected.", trace_level=2)
                 return
 
             # Create a confirmation popup
@@ -304,9 +304,9 @@ class BackupGUI:
                     drive_variables.drives = [d for d in drive_variables.drives if d['location'] != selected_drive]
                     root.dropdownDrives['values'] = [d['location'] for d in drive_variables.drives if os.path.exists(d['location'])]
                     dbs.update_drives_list(drive_variables.drives)
-                    tracer.log(f"Drive '{selected_drive}' removed successfully.")
+                    tracer.log(f"Drive '{selected_drive}' removed successfully.", trace_level=2)
                 except Exception as e:
-                    tracer.log(f"Error removing drive: {str(e)}")
+                    tracer.log_error(f"Error removing drive: {str(e)}")
                 confirm_popup.destroy()
 
             button_confirm = tk.Button(confirm_popup, text="Delete", command=confirm_delete)
@@ -319,10 +319,10 @@ class BackupGUI:
             #print(f"Button confirm info: {button_confirm.grid_info()}")
 
         except Exception as e:
-            tracer.log(f"Error 26425: {e}")
+            tracer.log_error(f"Error 26425: {e}")
     
     def buttonDBCopies_click(root):
-        tracer.log("")
+        tracer.log("", trace_level=2)
         try:
             root.repeated_files = toolbox.create_copies_report(get_text_field(root.dropdownDrives))
             root.repeated_files = [file for file in root.repeated_files if not file[0]['leave_copies']]
@@ -335,42 +335,42 @@ class BackupGUI:
                 for file in repetition:
                     message += (" "*4) + file['file_path'] + "\n"
                 tracer.log_to_report(message, drive_variables.copies_report_txt)
-            tracer.log("Report created")
+            tracer.log("Report created", trace_level=2)
 
             #Create popups
             def process_files():
-                tracer.log("")
+                tracer.log("", trace_level=2)
                 try:
                     result = root.fileSelectionPopup.result
-                    tracer.log(f"Result from file selection popup: {result}")
+                    tracer.log(f"Result from file selection popup: {result}", trace_level=2)
                     if result == None:
                         raise ValueError(f"Error 93183: Invalid result from file selection popup")
                     elif result[0] == "keep this":
                         for file in root.repetition:
                             if not file['file_path'] == root.fileSelectionPopup.result[1]:
-                                tracer.log(f"Deleting file in {file['file_path']}")
+                                tracer.log(f"Deleting file in {file['file_path']}", trace_level=2)
                                 send2trash.send2trash(file['file_path'])
                         return False
                     elif result[0] == "keep all":
-                        tracer.log("Keeping all files in this repetition.")
+                        tracer.log("Keeping all files in this repetition.", trace_level=2)
                     elif result[0] == "delete all":
-                        tracer.log("Deleting all files in this repetition.")
+                        tracer.log("Deleting all files in this repetition.", trace_level=2)
                         for file in root.repetition:
-                            tracer.log(f"Deleting file in {file['file_path']}")
+                            tracer.log(f"Deleting file in {file['file_path']}", trace_level=2)
                             send2trash.send2trash(file['file_path'])
                         return False
                     elif result[0] == "leave":
                         for file in root.repetition:
                             file['leave_copies'] = True
-                        tracer.log("Leaving selection menu without changes.")
+                        tracer.log("Leaving selection menu without changes.", trace_level=2)
                         return True
                     else:
                         raise ValueError(f"Error 93182: Invalid result from file selection popup: {result}")
                 except Exception as e:
-                    tracer.log(f"Error 93192: {e}")
+                    tracer.log_error(f"Error 93192: {e}")
 
             def on_popup_close():
-                tracer.log("")
+                tracer.log("", trace_level=2)
                 try:
                     leaveQ = process_files()
                     if leaveQ or root.index == root.number_of_repetitions - 1:
@@ -386,10 +386,10 @@ class BackupGUI:
                         drive_full_path = get_text_field(root.dropdownDrives)
                     )
                 except Exception as e:
-                    tracer.log(f"Error 56325: {e}")
+                    tracer.log_error(f"Error 56325: {e}")
 
             if root.number_of_repetitions > 0:
-                tracer.log(f"Number of repetitions: {root.number_of_repetitions}")
+                tracer.log(f"Number of repetitions: {root.number_of_repetitions}", trace_level=2)
                 root.index = 0
                 root.repetition = root.repeated_files[root.index]
                 root.fileSelectionPopup = FileSelectionPopup(
@@ -400,13 +400,13 @@ class BackupGUI:
                     on_close = on_popup_close,
                     drive_full_path = get_text_field(root.dropdownDrives)
                 )
-                tracer.log(f"Popup created")
+                tracer.log(f"Popup created", trace_level=2)
 
         except Exception as e:
-            tracer.log(f"Error 56425: {e}")
+            tracer.log_error(f"Error 56425: {e}")
 
     def buttonCreateUniques_click(root):
-        tracer.log("")
+        tracer.log("", trace_level=2)
         try:
             # Clear the panel_frame
             for widget in root.panel_frame.winfo_children():
@@ -424,7 +424,7 @@ class BackupGUI:
             text_input.grid(row=2, column=1, columnspan=2, pady=5)
 
             def compareWithDatabase_click():
-                tracer.log("")
+                tracer.log("", trace_level=2)
                 backup_drive_path = get_text_field(root.dropdownDrives)
                 additional_drive_path = get_text_field(text_input)
                 comparison = toolbox.create_comparison_report(backup_drive_path, additional_drive_path)
@@ -432,7 +432,7 @@ class BackupGUI:
                 file_manager.create_unique_files(additional_drive_path, files_to_copy)
 
             def createNewDatabase_click():
-                tracer.log("")
+                tracer.log("", trace_level=2)
                 toolbox.create_database(get_text_field(text_input))
 
 
@@ -446,15 +446,15 @@ class BackupGUI:
                 text="Create comparison report", command = compareWithDatabase_click)
             button_comparewithdatabase.grid(row=4, column=0, columnspan=2, pady=5)
         except Exception as e:
-            tracer.log(f"Error 83103: {e}")
+            tracer.log_error(f"Error 83103: {e}")
     
     def buttonCreateStatistics_click(root):
-        tracer.log("")
+        tracer.log("", trace_level=2)
         try:
             #Create statistic pictures
             drive_path = get_text_field(root.dropdownDrives)
             toolbox.create_statistics_pictures(drive_path)
-            tracer.log("Pictures created")
+            tracer.log("Pictures created", trace_level=2)
 
             # Clear the panel_frame
             for widget in root.panel_frame.winfo_children():
@@ -466,10 +466,10 @@ class BackupGUI:
             root.image_index = 0
 
             def fill_image():
-                tracer.log("")
+                tracer.log("", trace_level=2)
                 try:
                     index = root.image_index
-                    tracer.log(f"Fill image {index}")
+                    tracer.log(f"Fill image {index}", trace_level=2)
                     # Clear the panel_frame
                     for widget in root.panel_frame.winfo_children():
                         if widget not in [root.panel_frame.winfo_children()[0],  # Label
@@ -491,27 +491,27 @@ class BackupGUI:
                     image_label = tk.Label(root.panel_frame, image=resized_image)
                     image_label.grid(row=1, column=0, columnspan=5, padx=5, pady=5)
                 except Exception as e:
-                    tracer.log(f"Error loading image {index}: {str(e)}")
+                    tracer.log_error(f"Error loading image {index}: {str(e)}")
 
             def on_button_left_click():
-                tracer.log("")
+                tracer.log("", trace_level=2)
                 try:
                     root.image_index -= 1
                     if root.image_index < 0:     
                         root.image_index = len(root.image_names) - 1
                     fill_image()
                 except Exception as e: 
-                    tracer.log(f"Error 83103: {e}")
+                    tracer.log_error(f"Error 83103: {e}")
             
             def on_button_right_click():
-                tracer.log("")
+                tracer.log("", trace_level=2)
                 try:
                     root.image_index += 1
                     if root.image_index >= len(root.image_names):     
                         root.image_index = 0
                     fill_image()
                 except Exception as e: 
-                    tracer.log(f"Error 83104: {e}")
+                    tracer.log_error(f"Error 83104: {e}")
 
             # Add a label to the panel_frame
             label = tk.Label(root.panel_frame, text="Statistics Menu", font=("Arial", 16))
@@ -525,11 +525,11 @@ class BackupGUI:
             button_right.grid(row=0, column=3, pady=10, padx=5, sticky="w")
             fill_image()
         except Exception as e:
-            tracer.log(f"Error 83101: {e}")
+            tracer.log_error(f"Error 83101: {e}")
     #endregion
     
     def buttonCleanFiles_click(root):
-        tracer.log("")
+        tracer.log("", trace_level=2)
         try:
             popup = tk.Toplevel(root.rootTK)
             popup.title("Clean Files")
@@ -631,7 +631,7 @@ class BackupGUI:
                 try:
                     path = root.dropdownDrives.get()
                     if not os.path.isdir(path):
-                        tracer.log(f"Clean aborted: invalid path '{path}'")
+                        tracer.log(f"Clean aborted: invalid path '{path}'", trace_level=2)
                         return
                     selected_exts = {ext for ext, var in ext_vars.items() if var.get()}
                     selected_folders = set(folder_listbox.get(0, tk.END))
@@ -644,9 +644,9 @@ class BackupGUI:
                         folder_names=selected_folders,
                         delete_empty_folders=delete_empty_var.get()
                     )
-                    tracer.log(f"Clean finished. Freed: {data_clean.format_size(freed)}")
+                    tracer.log(f"Clean finished. Freed: {data_clean.format_size(freed)}", trace_level=2)
                 except Exception as e:
-                    tracer.log(f"Error 72502: {e}")
+                    tracer.log_error(f"Error 72502: {e}")
                 finally:
                     _clear_cursor(root.rootTK)
 
@@ -656,7 +656,7 @@ class BackupGUI:
                       activeforeground="white").pack(side=tk.RIGHT)
 
         except Exception as e:
-            tracer.log(f"Error 72501: {e}")
+            tracer.log_error(f"Error 72501: {e}")
 
     def mainloop(root):
         root.rootTK.mainloop()

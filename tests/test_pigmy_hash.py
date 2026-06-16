@@ -3,7 +3,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
+from unittest import mock
 
 from tools_library.pigmy_hash import compute_file_hash, save_pigmy_hash, load_pigmy_hash, index_vault
 
@@ -45,34 +47,111 @@ class TestComputeFileHash(unittest.TestCase):
         self.assertGreater(len(result), 0)
 
 
-class TestPigmyHashRoundtrip(unittest.TestCase):
+class TestPigmyHashCache(unittest.TestCase):
+    """Covers the SQLite-backed incremental cache (.pigmy-hash-db): unchanged
+    files are never re-hashed, changed/deleted files are detected correctly,
+    and load_pigmy_hash's pure-DB reconstruction matches a live index_vault."""
+
     def setUp(self):
         self.tmp = tempfile.mkdtemp()
 
     def tearDown(self):
         shutil.rmtree(self.tmp)
 
-    def test_save_and_load(self):
-        original = {
-            "abc123": [["/a/b.txt", "/c/d.txt"]],
-            "def456": [["/e/f.txt"]],
-        }
-        save_pigmy_hash(self.tmp, original)
-        loaded, indexed_at = load_pigmy_hash(self.tmp)
-        # load_pigmy_hash normalizes separators, so compare against normpath'd expected
-        expected = {
-            h: [[os.path.normpath(p) for p in group] for group in groups]
-            for h, groups in original.items()
-        }
-        self.assertEqual(expected, loaded)
-        self.assertIsNotNone(indexed_at)
-        self.assertIsInstance(indexed_at, float)
+    def _write(self, rel, content=b"data"):
+        path = os.path.join(self.tmp, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(content)
+        return path
 
-    def test_empty_hash_roundtrip(self):
-        save_pigmy_hash(self.tmp, {})
-        loaded, indexed_at = load_pigmy_hash(self.tmp)
+    def test_empty_vault_roundtrip(self):
+        pigmyhash, skipped = index_vault(self.tmp)
+        self.assertEqual(pigmyhash, {})
+        indexed_at = save_pigmy_hash(self.tmp, pigmyhash)
+        self.assertIsInstance(indexed_at, float)
+        loaded, loaded_at = load_pigmy_hash(self.tmp)
         self.assertEqual(loaded, {})
-        self.assertIsNotNone(indexed_at)
+        self.assertEqual(loaded_at, indexed_at)
+
+    def test_second_index_run_does_not_rehash_unchanged_files(self):
+        self._write("a.txt", b"hello")
+        self._write("sub/b.txt", b"world")
+        index_vault(self.tmp)
+
+        calls = []
+        import tools_library.pigmy_hash as ph
+        original = ph._hash_file
+
+        def counting(path):
+            calls.append(path)
+            return original(path)
+
+        with mock.patch("tools_library.pigmy_hash._hash_file", side_effect=counting):
+            index_vault(self.tmp)
+        self.assertEqual(calls, [], f"expected no rehashing, but got: {calls}")
+
+    def test_modified_file_triggers_rehash_only_for_that_file(self):
+        a = self._write("a.txt", b"hello")
+        self._write("b.txt", b"world")
+        index_vault(self.tmp)
+
+        time.sleep(0.01)
+        with open(a, "wb") as f:
+            f.write(b"hello, but different now")
+        os.utime(a, None)
+
+        import tools_library.pigmy_hash as ph
+        calls = []
+        original = ph._hash_file
+
+        def counting(path):
+            calls.append(path)
+            return original(path)
+
+        with mock.patch("tools_library.pigmy_hash._hash_file", side_effect=counting):
+            pigmyhash, skipped = index_vault(self.tmp)
+        self.assertEqual(calls, [a])
+        all_paths = [p for g in pigmyhash.values() for grp in g for p in grp]
+        self.assertTrue(any("a.txt" in p for p in all_paths))
+
+    def test_deleted_file_pruned_from_result_and_cache(self):
+        a = self._write("a.txt", b"hello")
+        b = self._write("b.txt", b"world")
+        index_vault(self.tmp)
+
+        os.remove(b)
+        pigmyhash, skipped = index_vault(self.tmp)
+        all_paths = [p for g in pigmyhash.values() for grp in g for p in grp]
+        self.assertFalse(any("b.txt" in p for p in all_paths))
+        self.assertTrue(any("a.txt" in p for p in all_paths))
+
+        # Confirm it's gone from the cache itself, not just this run's result.
+        save_pigmy_hash(self.tmp, pigmyhash)
+        loaded, _ = load_pigmy_hash(self.tmp)
+        loaded_paths = [p for g in loaded.values() for grp in g for p in grp]
+        self.assertFalse(any("b.txt" in p for p in loaded_paths))
+
+    def test_load_pigmy_hash_matches_live_index_including_folder_hashes(self):
+        self._write("a.txt", b"hello")
+        self._write("sub/b.txt", b"world")
+        self._write("sub/deeper/c.txt", b"hello")  # same content as a.txt
+        pigmyhash, _ = index_vault(self.tmp)
+        save_pigmy_hash(self.tmp, pigmyhash)
+        loaded, _ = load_pigmy_hash(self.tmp)
+        self.assertEqual(loaded, pigmyhash)
+
+        # Folder-level hashes must be present too (not just files).
+        all_paths = [p for g in loaded.values() for grp in g for p in grp]
+        self.assertTrue(any(p.endswith("sub") for p in all_paths))
+
+    def test_save_pigmy_hash_returns_increasing_timestamps(self):
+        self._write("a.txt", b"hello")
+        pigmyhash, _ = index_vault(self.tmp)
+        t1 = save_pigmy_hash(self.tmp, pigmyhash)
+        time.sleep(0.01)
+        t2 = save_pigmy_hash(self.tmp, pigmyhash)
+        self.assertGreater(t2, t1)
 
 
 class TestIndexVaultSkipped(unittest.TestCase):
@@ -133,16 +212,22 @@ class TestIndexVaultSkipped(unittest.TestCase):
         self._write("ok.txt", b"readable")
         locked = self._write("locked_win.txt", b"cannot read this")
         username = os.environ.get("USERNAME", "")
+        # Deny only the granular "read data" right (RD), not the simple "(R)" permission —
+        # (R) also denies READ_CONTROL, which can strip our own ability to ever modify this
+        # ACL again (a self-lockout requiring takeown/icacls /reset to recover from).
         subprocess.run(
-            ["icacls", locked, "/deny", f"{username}:(R)"],
+            ["icacls", locked, "/deny", f"{username}:(RD)"],
             check=True, capture_output=True,
         )
         try:
             pigmyhash, skipped = index_vault(self.tmp)
         finally:
+            # Best-effort cleanup — must not raise, or it would mask a real assertion
+            # failure above and leave the temp dir's rmtree (in tearDown) to deal with
+            # a still-locked file.
             subprocess.run(
                 ["icacls", locked, "/remove:d", username],
-                check=True, capture_output=True,
+                capture_output=True,
             )
         skipped_paths = [p for p, _ in skipped]
         self.assertTrue(

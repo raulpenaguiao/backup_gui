@@ -129,7 +129,7 @@ class LoadingPopup:
             # When finished: wait for show_done() to be called from main thread
 
         except Exception as e:
-            tracer.log(f"LoadingPopup poll error: {e}")
+            tracer.log_error(f"LoadingPopup poll error: {e}")
 
     def show_done(self, on_open):
         """Called from main thread after indexing completes. Shows stats + View Panel button."""
@@ -153,7 +153,7 @@ class LoadingPopup:
                       font=("Helvetica", 10),
                       padx=16, pady=6).pack(side=tk.RIGHT)
         except Exception as e:
-            tracer.log(f"LoadingPopup show_done error: {e}")
+            tracer.log_error(f"LoadingPopup show_done error: {e}")
 
     def destroy(self):
         if self._poll_id is not None:

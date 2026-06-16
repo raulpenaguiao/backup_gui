@@ -27,7 +27,7 @@ def load_rules(vault_path):
         with open(p) as f:
             return json.load(f)
     except Exception as e:
-        tracer.log(f"Error loading rules from {p}: {e}")
+        tracer.log_error(f"Error loading rules from {tracer.pid(p)}: {e}")
         return []
 
 
@@ -36,9 +36,9 @@ def save_rules(vault_path, rules):
     try:
         with open(p, "w") as f:
             json.dump(rules, f, indent=2)
-        tracer.log(f"Saved {len(rules)} rule(s) to {p!r}")
+        tracer.log(f"Saved {len(rules)} rule(s) to {tracer.pid(p)}", trace_level=3)
     except Exception as e:
-        tracer.log(f"Error saving rules to {p}: {e}")
+        tracer.log_error(f"Error saving rules to {tracer.pid(p)}: {e}")
 
 
 def add_rule(vault_path, rule):
@@ -55,7 +55,7 @@ def remove_rule(vault_path, index):
     if 0 <= index < len(rules):
         removed = rules.pop(index)
         save_rules(vault_path, rules)
-        tracer.log(f"Removed rule {index!r}: {removed.get('name')!r}")
+        tracer.log(f"Removed rule {index!r}: {removed.get('name')!r}", trace_level=3)
     return rules
 
 
@@ -85,7 +85,7 @@ def file_matches_rule(rule, file_path, vault_path):
             return ext == pat
 
     except Exception as e:
-        tracer.log(f"Rule match error for {file_path!r}: {e}")
+        tracer.log_error(f"Rule match error for {tracer.pid(file_path)}: {e}")
     return False
 
 

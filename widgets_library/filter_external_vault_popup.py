@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import send2trash
 import tools_library.tracer as tracer
+from tools_library import deleted_files_db
 from tools_library.file_tree import human_size
 from tools_library.vault_operations import scan_external_vault, delete_empty_folders
 from tools_library.pigmy_hash import compute_file_hash
@@ -415,7 +416,8 @@ class FilterExternalVaultPopup:
                 try:
                     send2trash.send2trash(os.path.normpath(f))
                     deleted.append(f)
-                    tracer.log(f"Deleted from external vault: {f!r}")
+                    deleted_files_db.record_deletion(None, f, None)
+                    tracer.log(f"Deleted from external vault: {tracer.pid(f)}", trace_level=5)
                 except Exception as e:
                     errors.append(f)
                     tracer.log_error(f"Error deleting {f!r}: {e}")
@@ -460,7 +462,7 @@ class FilterExternalVaultPopup:
         msg = f"Moved {n:,} file(s) to trash."
         if errors:
             msg += f"\n{len(errors)} error(s) — check error log for details."
-        tracer.log(f"Filter external vault: {n} deleted, {len(errors)} errors.")
+        tracer.log(f"Filter external vault: {n} deleted, {len(errors)} errors.", trace_level=3)
         messagebox.showinfo("Done", msg, parent=self._root)
 
         if not self._matches:
@@ -520,7 +522,7 @@ class FilterExternalVaultPopup:
                         if filecmp.cmp(keeper, candidate, shallow=False):
                             to_delete.append(candidate)
                     except OSError as e:
-                        tracer.log_error(f"Keep-unique filecmp error {candidate!r}: {e}")
+                        tracer.log_error(f"Keep-unique filecmp error {tracer.pid(candidate)}: {e}")
             msg_q.put(("done", sorted(to_delete)))
 
         threading.Thread(target=worker, daemon=True).start()
@@ -665,7 +667,8 @@ class FilterExternalVaultPopup:
                         n = len(deleted)
                         result_msg = (f"Removed {n} empty folder(s) from the external vault."
                                       if n else "No empty folders found.")
-                        tracer.log(f"Delete EV empty folders: {n} removed from {self._external_path!r}")
+                        tracer.log(f"Delete EV empty folders: {n} removed from "
+                                   f"{tracer.pid(self._external_path)}", trace_level=3)
                         messagebox.showinfo("Delete EV empty folders", result_msg, parent=self._root)
                         return
             except queue.Empty:

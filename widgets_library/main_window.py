@@ -20,13 +20,19 @@ from tools_library.vault_operations import (
     delete_empty_folders, get_repetitions, get_folder_repetitions,
     paths_overlap,
 )
-from tools_library.drive_variables import kept_file as _KEPT_FILE, rules_file as _RULES_FILE
+from tools_library.drive_variables import (
+    kept_file as _KEPT_FILE, rules_file as _RULES_FILE, pigmy_hash_file as _PIGMY_HASH_FILE,
+)
 from widgets_library.duplicates_review_popup import DuplicatesReviewPopup
 from widgets_library.filter_external_vault_popup import FilterExternalVaultPopup
 from widgets_library.log_viewer import LogViewer
 from widgets_library.tooltip import Tooltip
 
-_SKIP = {".pigmy-hash", ".pigmy", _KEPT_FILE, _RULES_FILE}
+_SKIP = {_PIGMY_HASH_FILE, ".pigmy", _KEPT_FILE, _RULES_FILE}
+
+
+def _is_skipped(name):
+    return name in _SKIP or name.startswith(_PIGMY_HASH_FILE)
 
 
 class MainWindow:
@@ -222,7 +228,7 @@ class MainWindow:
     def _insert_dir_children(self, parent_iid, dir_path):
         try:
             entries = sorted(
-                (e for e in os.scandir(dir_path) if e.name not in _SKIP),
+                (e for e in os.scandir(dir_path) if not _is_skipped(e.name)),
                 key=lambda e: (not e.is_dir(follow_symlinks=False), e.name.lower()),
             )
         except (PermissionError, OSError):
@@ -241,7 +247,7 @@ class MainWindow:
                 self._path_map[iid] = path
                 try:
                     has_children = any(
-                        e.name not in _SKIP for e in os.scandir(path)
+                        not _is_skipped(e.name) for e in os.scandir(path)
                     )
                 except (PermissionError, OSError):
                     has_children = False
@@ -375,7 +381,8 @@ class MainWindow:
                 "folder that contains the vault.",
                 parent=self.root,
             )
-            tracer.log(f"Rejected: external path {path!r} overlaps with vault {self.vault_path!r}")
+            tracer.log(f"Rejected: external path {tracer.pid(path)} overlaps with vault "
+                       f"{tracer.pid(self.vault_path)}", trace_level=3)
             return
 
         def builder(panel_frame):

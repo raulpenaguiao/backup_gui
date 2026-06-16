@@ -4,6 +4,7 @@ import tempfile
 import unittest
 
 from tools_library.file_tree import human_size, build_size_index
+from tools_library.drive_variables import pigmy_hash_file
 
 
 class TestHumanSize(unittest.TestCase):
@@ -62,7 +63,14 @@ class TestBuildSizeIndex(unittest.TestCase):
         self.assertEqual(counts[self.tmp], 2)
 
     def test_skips_pigmy_hash_file(self):
-        self._write(".pigmy-hash", b"should be skipped by index")
+        self._write(pigmy_hash_file, b"should be skipped by index")
+        self._write("real.txt", b"ab")
+        sizes, counts = build_size_index(self.tmp)
+        self.assertEqual(sizes[self.tmp], 2)
+        self.assertEqual(counts[self.tmp], 1)
+
+    def test_skips_pigmy_hash_db_sidecar_files(self):
+        self._write(pigmy_hash_file + "-journal", b"stale journal from a crashed run")
         self._write("real.txt", b"ab")
         sizes, counts = build_size_index(self.tmp)
         self.assertEqual(sizes[self.tmp], 2)

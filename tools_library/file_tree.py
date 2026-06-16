@@ -1,6 +1,11 @@
 import os
+import tools_library.drive_variables as drive_variables
 
-_SKIP = {".pigmy-hash", ".pigmy"}
+_SKIP = {drive_variables.pigmy_hash_file, ".pigmy"}
+
+
+def _is_skipped(name):
+    return name in _SKIP or name.startswith(drive_variables.pigmy_hash_file)
 
 
 def human_size(b):
@@ -37,7 +42,7 @@ def build_size_index(vault_path, progress_tracker=None, cancel_token=None):
         children = []
         try:
             for entry in os.scandir(dirpath):
-                if entry.name in _SKIP:
+                if _is_skipped(entry.name):
                     continue
                 is_dir = entry.is_dir(follow_symlinks=False)
                 if is_dir:

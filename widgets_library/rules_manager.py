@@ -307,7 +307,7 @@ class RulesManager:
             return
         self._rules = add_rule(self._vault_path, rule)
         self._refresh_list()
-        tracer.log(f"Rule added: {rule}")
+        tracer.log(f"Rule added: {rule}", trace_level=3)
 
     # ── Test rule ─────────────────────────────────────────────────────────────
 
