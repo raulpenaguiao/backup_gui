@@ -12,7 +12,27 @@ else:
 CONFIGFOLDER_PATH = os.path.join(PROGRAM_DIR, config_folder)
 DRIVESPATH_FILE = os.path.join(CONFIGFOLDER_PATH, drives_file)
 VAULTSPATH_FILE = os.path.join(CONFIGFOLDER_PATH, vaults_file)
+PREPARE_EV_SETTINGS_FILE = os.path.join(CONFIGFOLDER_PATH, "prepare_ev_settings.json")
 config_data = {}
+
+
+def load_prepare_ev_settings():
+    """Return {"ntfy_channel": str, "use_trash": bool} — defaults if never saved."""
+    defaults = {"ntfy_channel": "", "use_trash": True}
+    if os.path.exists(PREPARE_EV_SETTINGS_FILE):
+        try:
+            with open(PREPARE_EV_SETTINGS_FILE, 'r') as f:
+                data = json.load(f)
+            defaults.update(data)
+        except (IOError, json.JSONDecodeError):
+            pass
+    return defaults
+
+
+def save_prepare_ev_settings(settings):
+    os.makedirs(CONFIGFOLDER_PATH, exist_ok=True)
+    with open(PREPARE_EV_SETTINGS_FILE, 'w') as f:
+        json.dump(settings, f, indent=1)
 
 
 def initialize_vaults():

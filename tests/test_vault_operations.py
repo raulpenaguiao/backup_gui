@@ -7,9 +7,11 @@ from unittest import mock
 
 from tools_library.vault_operations import (
     get_repetitions, paths_overlap, filter_external_vault,
-    scan_external_vault,
+    scan_external_vault, find_copies_in_external, find_internal_duplicates,
+    delete_marked_files,
 )
-from tools_library.pigmy_hash import compute_file_hash
+from tools_library.pigmy_hash import compute_file_hash, index_vault, save_pigmy_hash
+from tools_library import path_db, deleted_files_db
 
 
 class TestGetRepetitions(unittest.TestCase):
@@ -271,6 +273,183 @@ class TestScanExternalVault(unittest.TestCase):
             self._write(self.ext, f"f{i}.txt", b"data")
         all_files, _ = scan_external_vault({}, self.ext)
         self.assertEqual(len(all_files), 4)
+
+
+class _DbIsolatedTestCase(unittest.TestCase):
+    """Redirects path_db/deleted_files_db to a temp file so tests never touch the real log/ dbs."""
+
+    def setUp(self):
+        self.db_tmp = tempfile.mkdtemp()
+        self._orig_paths_db = path_db.PATHS_DB_FILE
+        self._orig_deleted_db = deleted_files_db.DELETED_FILES_DB_FILE
+        path_db.PATHS_DB_FILE = os.path.join(self.db_tmp, "paths.db")
+        deleted_files_db.DELETED_FILES_DB_FILE = os.path.join(self.db_tmp, "deleted_files.db")
+        path_db.clear_cache()
+
+    def tearDown(self):
+        path_db.PATHS_DB_FILE = self._orig_paths_db
+        deleted_files_db.DELETED_FILES_DB_FILE = self._orig_deleted_db
+        path_db.clear_cache()
+        shutil.rmtree(self.db_tmp, ignore_errors=True)
+
+
+class TestFindCopiesInExternal(_DbIsolatedTestCase):
+    def setUp(self):
+        super().setUp()
+        self.tmp = tempfile.mkdtemp()
+        self.vault = os.path.join(self.tmp, "vault")
+        self.ext = os.path.join(self.tmp, "external")
+        os.makedirs(self.vault)
+        os.makedirs(self.ext)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+        super().tearDown()
+
+    def _write(self, base, relpath, content):
+        full = os.path.join(base, relpath)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "wb") as f:
+            f.write(content)
+        return full
+
+    def test_finds_copy_without_rehashing_ev(self):
+        vault_f = self._write(self.vault, "doc.txt", b"same content")
+        ev_f = self._write(self.ext, "doc.txt", b"same content")
+        main_hash, _ = index_vault(self.vault)
+        ev_hash, _ = index_vault(self.ext)
+        matches = []
+        find_copies_in_external(main_hash, ev_hash,
+                                match_callback=lambda *args: matches.append(args))
+        self.assertEqual(len(matches), 1)
+        path, size, file_hash, copy_path = matches[0]
+        self.assertEqual(os.path.normpath(path), os.path.normpath(ev_f))
+        self.assertEqual(os.path.normpath(copy_path), os.path.normpath(vault_f))
+
+    def test_no_match_when_content_differs(self):
+        self._write(self.vault, "doc.txt", b"vault content")
+        self._write(self.ext, "doc.txt", b"different content")
+        main_hash, _ = index_vault(self.vault)
+        ev_hash, _ = index_vault(self.ext)
+        matches = []
+        find_copies_in_external(main_hash, ev_hash,
+                                match_callback=lambda *args: matches.append(args))
+        self.assertEqual(matches, [])
+
+    def test_stop_event_halts(self):
+        self._write(self.vault, "doc.txt", b"same content")
+        self._write(self.ext, "doc.txt", b"same content")
+        main_hash, _ = index_vault(self.vault)
+        ev_hash, _ = index_vault(self.ext)
+        stop = threading.Event()
+        stop.set()
+        matches = []
+        find_copies_in_external(main_hash, ev_hash, stop_event=stop,
+                                match_callback=lambda *args: matches.append(args))
+        self.assertEqual(matches, [])
+
+
+class TestFindInternalDuplicates(_DbIsolatedTestCase):
+    def setUp(self):
+        super().setUp()
+        self.tmp = tempfile.mkdtemp()
+        self.ext = os.path.join(self.tmp, "external")
+        os.makedirs(self.ext)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+        super().tearDown()
+
+    def _write(self, relpath, content):
+        full = os.path.join(self.ext, relpath)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "wb") as f:
+            f.write(content)
+        return full
+
+    def test_pair_keeps_first_deletes_last(self):
+        a = self._write("a.txt", b"dup")
+        b = self._write("b.txt", b"dup")
+        ev_hash, _ = index_vault(self.ext)
+        matches = []
+        find_internal_duplicates(ev_hash, match_callback=lambda *args: matches.append(args))
+        self.assertEqual(len(matches), 1)
+        path, size, file_hash, copy_path = matches[0]
+        expected_keep, expected_delete = sorted([a, b])
+        self.assertEqual(os.path.normpath(path), os.path.normpath(expected_delete))
+        self.assertEqual(os.path.normpath(copy_path), os.path.normpath(expected_keep))
+
+    def test_group_of_three_keeps_first_deletes_rest(self):
+        paths = sorted([self._write(f"{n}.txt", b"triple") for n in ("c", "a", "b")])
+        ev_hash, _ = index_vault(self.ext)
+        matches = []
+        find_internal_duplicates(ev_hash, match_callback=lambda *args: matches.append(args))
+        deleted = sorted(os.path.normpath(m[0]) for m in matches)
+        self.assertEqual(deleted, [os.path.normpath(p) for p in paths[1:]])
+        for m in matches:
+            self.assertEqual(os.path.normpath(m[3]), os.path.normpath(paths[0]))
+
+    def test_no_duplicates_no_matches(self):
+        self._write("a.txt", b"one")
+        self._write("b.txt", b"two")
+        ev_hash, _ = index_vault(self.ext)
+        matches = []
+        find_internal_duplicates(ev_hash, match_callback=lambda *args: matches.append(args))
+        self.assertEqual(matches, [])
+
+
+class TestDeleteMarkedFiles(_DbIsolatedTestCase):
+    def setUp(self):
+        super().setUp()
+        self.tmp = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp)
+        super().tearDown()
+
+    def _write(self, relpath, content=b"x"):
+        full = os.path.join(self.tmp, relpath)
+        with open(full, "wb") as f:
+            f.write(content)
+        return full
+
+    def test_trash_deletion_records_to_db(self):
+        f = self._write("a.txt")
+        keeper = self._write("keep.txt")
+        suggestions = [{"path": f, "hash": "h1", "copy_path": keeper}]
+        with mock.patch("tools_library.vault_operations.send2trash.send2trash") as m:
+            deleted, errors = delete_marked_files(suggestions, use_trash=True)
+        m.assert_called_once()
+        self.assertEqual(deleted, [f])
+        self.assertEqual(errors, [])
+        rows = deleted_files_db.get_recent_deletions()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["file_hash"], "h1")
+
+    def test_permanent_deletion_uses_os_remove(self):
+        f = self._write("b.txt")
+        suggestions = [{"path": f, "hash": "h2", "copy_path": None}]
+        with mock.patch("tools_library.vault_operations.send2trash.send2trash") as trash_mock:
+            deleted, errors = delete_marked_files(suggestions, use_trash=False)
+        trash_mock.assert_not_called()
+        self.assertFalse(os.path.exists(f))
+        self.assertEqual(deleted, [f])
+
+    def test_error_is_collected_not_raised(self):
+        suggestions = [{"path": os.path.join(self.tmp, "missing.txt"), "hash": None, "copy_path": None}]
+        deleted, errors = delete_marked_files(suggestions, use_trash=False)
+        self.assertEqual(deleted, [])
+        self.assertEqual(len(errors), 1)
+
+    def test_stop_event_halts_before_processing(self):
+        f = self._write("c.txt")
+        suggestions = [{"path": f, "hash": None, "copy_path": None}]
+        stop = threading.Event()
+        stop.set()
+        with mock.patch("tools_library.vault_operations.send2trash.send2trash") as m:
+            deleted, errors = delete_marked_files(suggestions, use_trash=True, stop_event=stop)
+        m.assert_not_called()
+        self.assertEqual(deleted, [])
 
 
 if __name__ == "__main__":

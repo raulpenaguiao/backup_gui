@@ -26,7 +26,7 @@ def save_dic_to_json(dic, json_path):
         with open(json_path, 'w') as f:
             json.dump(dic, f, indent=1)
     except Exception as e:
-        tracer.log(f"An error occurred: {e}")
+        tracer.log_error(f"An error occurred: {e}")
 
 def split_different_files(files):
     """
@@ -61,20 +61,20 @@ def create_statistics_pictures(drive_path):
     and extensions in the database. The data is read from a JSON file containing file metadata.
     """
     drive_info_folder_full_path = os.path.join(drive_path, drive_variables.drive_folder_info)
-    tracer.log("drive_info_folder_full_path" + drive_info_folder_full_path)
+    tracer.log("drive_info_folder_full_path" + drive_info_folder_full_path, trace_level=2)
     drive_info_json_full_path = os.path.join(drive_info_folder_full_path, drive_variables.fileinfo_json)
-    tracer.log("drive_info_json_full_path" + drive_info_json_full_path)
+    tracer.log("drive_info_json_full_path" + drive_info_json_full_path, trace_level=2)
 
     # Read the JSON file containing file metadata
     with open(drive_info_json_full_path, 'r') as f:
         data = json.load(f)
-    tracer.log("json opened, it has " + str(len(data)) + " files")
+    tracer.log("json opened, it has " + str(len(data)) + " files", trace_level=2)
     files = [file_list[0][0] for checksum, file_list in data.items()]
-    tracer.log("files created, it has " + str(len(files)) + " files")
+    tracer.log("files created, it has " + str(len(files)) + " files", trace_level=2)
     
     # Create a DataFrame from the JSON data
     df = pd.DataFrame(files)
-    tracer.log("dataframe created, it has " + str(len(df)) + " files")
+    tracer.log("dataframe created, it has " + str(len(df)) + " files", trace_level=2)
     # Create a pie chart for top 15 file extensions
     extension_counts = Counter(df['extention'])
     extension_counts = dict(extension_counts.most_common(15))
@@ -83,7 +83,7 @@ def create_statistics_pictures(drive_path):
     plt.title('File Extensions Distribution')
     plt.savefig(os.path.join(drive_info_folder_full_path, drive_variables.extension_distribution))
     plt.close()
-    tracer.log("extention pie chart created, saved in " + str(os.path.join(drive_info_folder_full_path, drive_variables.extension_distribution)))
+    tracer.log("extention pie chart created, saved in " + str(os.path.join(drive_info_folder_full_path, drive_variables.extension_distribution)), trace_level=2)
 
     # Create a histogram for file sizes
     plt.figure(figsize=(10, 6))
@@ -93,7 +93,7 @@ def create_statistics_pictures(drive_path):
     plt.ylabel('Frequency')
     plt.savefig(os.path.join(drive_info_folder_full_path, drive_variables.file_size_histogram))
     plt.close()
-    tracer.log("file size histogram created, saved in " + str(os.path.join(drive_info_folder_full_path, drive_variables.file_size_histogram)))
+    tracer.log("file size histogram created, saved in " + str(os.path.join(drive_info_folder_full_path, drive_variables.file_size_histogram)), trace_level=2)
     
     #Create a record of all the number of copies for each file
     file_repetitions = []
@@ -105,7 +105,7 @@ def create_statistics_pictures(drive_path):
         if c not in repetition_counts:
             repetition_counts[c] = 0
         repetition_counts[c] += 1
-    tracer.log("repetitions = " + str(repetition_counts))
+    tracer.log("repetitions = " + str(repetition_counts), trace_level=2)
     plt.figure(figsize=(10, 6))
     plt.bar(repetition_counts.keys(), repetition_counts.values(), color='green', alpha=0.7)
     plt.title('File Repetition Count')
@@ -113,7 +113,7 @@ def create_statistics_pictures(drive_path):
     plt.ylabel('Frequency')
     plt.savefig(os.path.join(drive_info_folder_full_path, drive_variables.file_repetition_count))
     plt.close()
-    tracer.log("repetition histogram created, saved in " + str(os.path.join(drive_info_folder_full_path, drive_variables.file_repetition_count)))
+    tracer.log("repetition histogram created, saved in " + str(os.path.join(drive_info_folder_full_path, drive_variables.file_repetition_count)), trace_level=2)
 
     # Create a histogram for file creation times
     creation_times = pd.to_datetime(df['date-created'], unit='s')
@@ -126,7 +126,7 @@ def create_statistics_pictures(drive_path):
     plt.tight_layout()
     plt.savefig(os.path.join(drive_info_folder_full_path, drive_variables.file_creation_time_histogram))
     plt.close()
-    tracer.log("creatin time histogram created, saved in " + str(os.path.join(drive_info_folder_full_path, drive_variables.file_creation_time_histogram)))
+    tracer.log("creatin time histogram created, saved in " + str(os.path.join(drive_info_folder_full_path, drive_variables.file_creation_time_histogram)), trace_level=2)
 
 def compute_checksum(file_data, size):
     if size < 1_000:
@@ -198,11 +198,11 @@ def list_files_in_folder(folder_path, verbose=False, progress_tracker=ProgressTr
                     count += 1
                     datec_formatted = time.strftime('%Y-%m-%d', time.localtime(datem))
                     if(verbose):
-                        tracer.log("count:", count, 'and size', size, 'and date of last change', datec_formatted)
+                        tracer.log("count:", count, 'and size', size, 'and date of last change', datec_formatted, trace_level=2)
             count_files += len(files)
             progress_tracker.set_current_value(count_files)
     except Exception as e:
-        tracer.log(f"An error occurred: {e}")
+        tracer.log_error(f"An error occurred: {e}")
     return list_of_files
 
 def initialize_database(path_to_dir):
@@ -232,7 +232,7 @@ def create_comparison_report(path_to_dir_1, path_to_dir_2):
 
     drive_info_folder_full_path_1 = os.path.join(path_to_dir_1, drive_variables.drive_folder_info)
     drive_info_json_full_path_1 = os.path.join(drive_info_folder_full_path_1, drive_variables.fileinfo_json)
-    tracer.log("drive 1 info full path " + drive_info_json_full_path_1)
+    tracer.log("drive 1 info full path " + drive_info_json_full_path_1, trace_level=2)
 
     # Read the JSON file containing file metadata
     with open(drive_info_json_full_path_1, 'r') as f:
@@ -240,7 +240,7 @@ def create_comparison_report(path_to_dir_1, path_to_dir_2):
         
     drive_info_folder_full_path_2 = os.path.join(path_to_dir_2, drive_variables.drive_folder_info)
     drive_info_json_full_path_2 = os.path.join(drive_info_folder_full_path_2, drive_variables.fileinfo_json)
-    tracer.log("drive 2 info full path " + drive_info_json_full_path_2)
+    tracer.log("drive 2 info full path " + drive_info_json_full_path_2, trace_level=2)
 
     # Read the JSON file containing file metadata
     with open(drive_info_json_full_path_2, 'r') as f:
@@ -280,13 +280,13 @@ def create_copies_report(path_to_drive):
                 
 def create_database(path, progress_tracker=ProgressTracker()):
     initialize_database(path)
-    tracer.log("Database is going to be initialized")
+    tracer.log("Database is going to be initialized", trace_level=2)
     list_of_files = list_files_in_folder(path, progress_tracker=progress_tracker)
-    tracer.log(f"list of files explored, there are {len(list_of_files)} files")
+    tracer.log(f"list of files explored, there are {len(list_of_files)} files", trace_level=2)
     dic_of_checksum_files = dic_of_checksums(list_of_files)
-    tracer.log(f"checksums computed, there are {len(dic_of_checksum_files)} checksums")
+    tracer.log(f"checksums computed, there are {len(dic_of_checksum_files)} checksums", trace_level=2)
     dic_of_files = {checksum: split_different_files(files) for checksum, files in dic_of_checksum_files.items()}
-    tracer.log(f"files are now split into {sum([len(dic_of_files[checksum]) for checksum in dic_of_files])} distinct files")
+    tracer.log(f"files are now split into {sum([len(dic_of_files[checksum]) for checksum in dic_of_files])} distinct files", trace_level=2)
     json_path = os.path.join(path, drive_variables.drive_folder_info, drive_variables.fileinfo_json)
     save_dic_to_json(dic_of_files, json_path)
 

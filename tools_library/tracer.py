@@ -5,7 +5,22 @@ from tools_library.drive_variables import log_folder
 from tools_library.dbs import PROGRAM_DIR
 
 log_folder_path = os.path.join(PROGRAM_DIR, log_folder)
-TRACE_LEVEL = 10
+
+# Trace levels range 1 (very verbose, e.g. per-file hashing) to 5 (high-signal,
+# e.g. files actually deleted). Only lines at or below this threshold are written.
+TRACE_LEVEL = 3
+
+
+def pid(path):
+    """Return a short '#<id>' token referencing path in the directory-tree DB.
+
+    Use this instead of interpolating a raw path into a log message so log files
+    never store full paths directly (see tools_library/path_db.py).
+    """
+    if not path:
+        return ""
+    from tools_library import path_db
+    return f"#{path_db.get_path_id(path)}"
 
 
 def current_log_path():
@@ -36,21 +51,26 @@ def timestamp():
     return time.strftime("%y%m%d%H%M%S") + f"{int(time.time() * 1000) % 1000:03d}"
 
 
-def _write_log(path, caller_file, caller_name, line):
+def _write_log(path, caller_file, caller_name, line, level=None):
     os.makedirs(log_folder_path, exist_ok=True)
+    level_tag = f"L{level} " if level is not None else ""
     with open(path, 'a', encoding='utf-8') as f:
-        f.write(f"{timestamp()} {caller_file}>{caller_name} {line} \n")
+        f.write(f"{timestamp()} {level_tag}{caller_file}>{caller_name} {line} \n")
 
 
-def log(line, trace_level=0):
+def log(line, trace_level=1):
     if trace_level > TRACE_LEVEL:
         return
     frame = inspect.currentframe().f_back
-    _write_log(current_log_path(), frame.f_code.co_filename, frame.f_code.co_name, line)
+    _write_log(current_log_path(), frame.f_code.co_filename, frame.f_code.co_name, line,
+               level=trace_level)
 
 
 def log_error(line):
-    """Write to both the main info log (tagged ERROR) and the error-only log."""
+    """Write to both the main info log (tagged ERROR) and the error-only log.
+
+    Errors are always written regardless of TRACE_LEVEL.
+    """
     frame = inspect.currentframe().f_back
     caller_file = frame.f_code.co_filename
     caller_name = frame.f_code.co_name

@@ -21,9 +21,10 @@ def _read_version():
 
 
 class VaultPicker:
-    def __init__(self, root, on_vault_open):
+    def __init__(self, root, on_vault_open, on_prepare_ev=None):
         self.root = root
         self.on_vault_open = on_vault_open
+        self.on_prepare_ev = on_prepare_ev
         self._build()
 
     def _build(self):
@@ -71,6 +72,17 @@ class VaultPicker:
         btn_open = ttk.Button(bottom_row, text="Open Vault", command=self._open)
         btn_open.pack(side=tk.LEFT, ipadx=24, ipady=10)
         Tooltip(btn_open, "Open the selected vault. If no index exists yet, one will be created automatically.")
+
+        if self.on_prepare_ev is not None:
+            prepare_row = ttk.Frame(self.frame)
+            prepare_row.pack(fill=tk.X, pady=(8, 0))
+            btn_prepare = ttk.Button(prepare_row, text="Prepare External Vault",
+                                     command=self.on_prepare_ev)
+            btn_prepare.pack(side=tk.LEFT, ipadx=24, ipady=10)
+            Tooltip(btn_prepare,
+                    "Select a main vault and an external vault, then run a guided pipeline "
+                    "to index both, find copies/duplicates in the external vault, and clean "
+                    "it up — without opening either vault for editing.")
 
         ttk.Label(self.frame, text=f"Pigmy Backup v{_read_version()}",
                   font=("Helvetica", 8), foreground="gray").pack(side=tk.BOTTOM, pady=(16, 0))

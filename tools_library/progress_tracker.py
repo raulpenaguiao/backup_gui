@@ -2,7 +2,7 @@ import tools_library.tracer as tracer
 
 class ProgressTracker:
     def __init__(self, name="Progress Tracker", unit="progress"):
-        tracer.log(name + " - " + unit)
+        tracer.log(name + " - " + unit, trace_level=2)
         self.name = name
         self.unit = unit
         self.callbacks = {}

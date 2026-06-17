@@ -22,7 +22,7 @@ config_folder = "config"
 drives_file = "drives.json"
 
 # New vault system
-pigmy_hash_file = ".pigmy-hash"
+pigmy_hash_file = ".pigmy-hash-db"
 kept_file = ".pigmy-keep"
 rules_file = ".pigmy-rules"
 vaults = []

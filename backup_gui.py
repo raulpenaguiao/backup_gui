@@ -11,6 +11,9 @@ from tools_library.app_icon import setup_icon
 from widgets_library.vault_picker import VaultPicker
 from widgets_library.main_window import MainWindow
 from widgets_library.loading_popup import LoadingPopup
+from widgets_library.vault_selector_popup import VaultSelectorPopup
+from widgets_library.prepare_ev_window import PrepareEVWindow
+from tools_library.vault_operations import paths_overlap
 import tools_library.tracer as tracer
 
 
@@ -26,7 +29,41 @@ class App:
     def _show_vault_picker(self):
         if self._view:
             self._view.destroy()
-        self._view = VaultPicker(self.root, on_vault_open=self._open_vault)
+        self._view = VaultPicker(self.root, on_vault_open=self._open_vault,
+                                 on_prepare_ev=self._start_prepare_ev)
+
+    def _start_prepare_ev(self):
+        VaultSelectorPopup(
+            self.root, title="Select main vault",
+            on_confirm=self._prepare_ev_main_selected,
+            on_back=lambda: None,
+        )
+
+    def _prepare_ev_main_selected(self, main_vault):
+        VaultSelectorPopup(
+            self.root, title="Select external vault (EV)",
+            subtitle=f"Main vault: {main_vault}",
+            on_confirm=lambda ev_vault: self._prepare_ev_ev_selected(main_vault, ev_vault),
+            on_back=self._start_prepare_ev,
+        )
+
+    def _prepare_ev_ev_selected(self, main_vault, ev_vault):
+        if paths_overlap(main_vault, ev_vault):
+            messagebox.showwarning(
+                "Invalid Selection",
+                "The selected external vault overlaps with the main vault.\n\n"
+                "The external vault must be completely outside the main vault — "
+                "it cannot be the same folder, inside it, or a parent folder that "
+                "contains it.",
+                parent=self.root,
+            )
+            tracer.log(f"Prepare EV rejected: {tracer.pid(ev_vault)} overlaps with "
+                       f"{tracer.pid(main_vault)}", trace_level=3)
+            self._prepare_ev_main_selected(main_vault)
+            return
+        if self._view:
+            self._view.destroy()
+        self._view = PrepareEVWindow(self.root, main_vault, ev_vault, on_back=self._show_vault_picker)
 
     def _open_vault(self, vault_path):
         pigmy_hash_path = os.path.join(vault_path, drive_variables.pigmy_hash_file)
@@ -56,7 +93,7 @@ class App:
                 self.root.after(0, lambda: self._on_ready(
                     loading, vault_path, pigmyhash, sizes, file_counts, indexed_at, skipped))
             except Exception as e:
-                tracer.log(f"Error opening vault: {e}")
+                tracer.log_error(f"Error opening vault: {e}")
                 self.root.after(0, loading.destroy)
 
         threading.Thread(target=run, daemon=True).start()
@@ -80,7 +117,7 @@ class App:
                 self.root.after(0, lambda: self._on_ready(
                     loading, vault_path, pigmyhash, sizes, file_counts, indexed_at, skipped))
             except Exception as e:
-                tracer.log(f"Error reindexing vault: {e}")
+                tracer.log_error(f"Error reindexing vault: {e}")
                 self.root.after(0, loading.destroy)
 
         threading.Thread(target=run, daemon=True).start()

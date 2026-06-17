@@ -6,6 +6,7 @@ from tkinter import ttk, messagebox
 import send2trash
 import tools_library.tracer as tracer
 from tools_library import kept_files
+from tools_library import deleted_files_db
 from tools_library.duplicate_rules import load_rules, apply_rules, net_action
 from widgets_library.tooltip import Tooltip
 from PIL import Image, ImageTk
@@ -28,7 +29,7 @@ def _open_file(path):
     except AttributeError:
         subprocess.Popen(["xdg-open", path])
     except Exception as e:
-        tracer.log(f"Error opening {path}: {e}")
+        tracer.log_error(f"Error opening {tracer.pid(path)}: {e}")
 
 
 def _open_in_explorer(path, is_dir=False):
@@ -50,7 +51,7 @@ def _open_in_explorer(path, is_dir=False):
             target = norm if is_dir else os.path.dirname(norm)
             subprocess.Popen(["xdg-open", target])
     except Exception as e:
-        tracer.log(f"Error opening explorer for {path!r}: {e}")
+        tracer.log_error(f"Error opening explorer for {tracer.pid(path)}: {e}")
 
 
 class DuplicatesReviewPopup:
@@ -358,11 +359,12 @@ class DuplicatesReviewPopup:
             norm = os.path.normpath(path)
             h = self._path_to_hash.get(norm)
             if not h:
-                tracer.log(f"Always-keep: no hash found for {path!r}, skipping")
+                tracer.log(f"Always-keep: no hash found for {tracer.pid(path)}, skipping",
+                           trace_level=2)
                 continue
             rel = os.path.relpath(norm, self._vault_path)
             self._kept.add((h, rel))
-            tracer.log(f"Always-keep marked: {rel!r}")
+            tracer.log(f"Always-keep marked: {rel!r}", trace_level=3)
         kept_files.save_kept(self._vault_path, self._kept)
         self._refresh_file_lb()
 
@@ -416,7 +418,7 @@ class DuplicatesReviewPopup:
 
         self._update_pending_label()
         if auto_staged:
-            tracer.log(f"Auto-apply rules: staged {auto_staged} item(s)")
+            tracer.log(f"Auto-apply rules: staged {auto_staged} item(s)", trace_level=3)
             if not self._items:
                 self._leave()
                 return
@@ -760,16 +762,21 @@ class DuplicatesReviewPopup:
         errors = []
         try:
             for action in self._pending:
+                group_paths = action.get("original_item", {}).get("paths", [])
+                kept_in_group = [p for p in group_paths if p not in action["deleted"]]
+                copy_path = kept_in_group[0] if kept_in_group else None
                 for path in action["deleted"]:
                     normed = os.path.normpath(path)
                     if not os.path.exists(normed):
-                        tracer.log(f"Already gone, skipping: {path}")
+                        tracer.log(f"Already gone, skipping: {tracer.pid(path)}", trace_level=2)
                         continue
                     try:
                         send2trash.send2trash(normed)
-                        tracer.log(f"Sent to trash: {path}")
+                        file_hash = self._path_to_hash.get(normed)
+                        deleted_files_db.record_deletion(file_hash, path, copy_path)
+                        tracer.log(f"Sent to trash: {tracer.pid(path)}", trace_level=5)
                     except Exception as e:
-                        tracer.log(f"Error deleting {path}: {e}")
+                        tracer.log_error(f"Error deleting {path!r}: {e}")
                         errors.append(f"{os.path.basename(path)}: {e}")
         finally:
             self._root.config(cursor="")

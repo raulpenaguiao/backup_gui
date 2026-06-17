@@ -18,7 +18,7 @@ def load_kept(vault_path):
             data = json.load(f)
         return {(entry[0], entry[1]) for entry in data}
     except Exception as e:
-        tracer.log(f"Error loading kept files from {p}: {e}")
+        tracer.log_error(f"Error loading kept files from {tracer.pid(p)}: {e}")
         return set()
 
 
@@ -29,7 +29,7 @@ def save_kept(vault_path, kept):
         with open(p, "w") as f:
             json.dump([[h, rp] for h, rp in kept], f, indent=1)
     except Exception as e:
-        tracer.log(f"Error saving kept files to {p}: {e}")
+        tracer.log_error(f"Error saving kept files to {tracer.pid(p)}: {e}")
 
 
 def add_kept(vault_path, file_path, file_hash):
@@ -40,7 +40,7 @@ def add_kept(vault_path, file_path, file_hash):
     if entry not in kept:
         kept.add(entry)
         save_kept(vault_path, kept)
-        tracer.log(f"Always-keep added: {rel!r} (hash prefix: {file_hash[:8]})")
+        tracer.log(f"Always-keep added: {rel!r} (hash prefix: {file_hash[:8]})", trace_level=3)
     return kept
 
 
