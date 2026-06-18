@@ -6,6 +6,7 @@ import tools_library.drive_variables as drive_variables
 import tools_library.dbs as dbs
 import tools_library.tracer as tracer
 from widgets_library.tooltip import Tooltip
+from widgets_library.log_viewer import LogViewer
 
 
 def _read_version():
@@ -72,6 +73,10 @@ class VaultPicker:
         btn_open = ttk.Button(bottom_row, text="Open Vault", command=self._open)
         btn_open.pack(side=tk.LEFT, ipadx=24, ipady=10)
         Tooltip(btn_open, "Open the selected vault. If no index exists yet, one will be created automatically.")
+        btn_logs = ttk.Button(bottom_row, text="Open Logs",
+                              command=lambda: LogViewer(self.root))
+        btn_logs.pack(side=tk.RIGHT)
+        Tooltip(btn_logs, "Open the live application log (auto-refreshes every 1.5 s).")
 
         if self.on_prepare_ev is not None:
             prepare_row = ttk.Frame(self.frame)

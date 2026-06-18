@@ -36,7 +36,7 @@ def _run_with_timeout(fn, timeout):
 
 _SKIP_NAMES = {drive_variables.pigmy_hash_file, drive_variables.kept_file,
                drive_variables.rules_file, ".pigmy",
-               ".drive_info"}  # Filen sync metadata — not user data
+               ".drive_info", ".filen.trash.local"}  # Filen sync metadata — not user data
 
 
 def compute_file_hash(file_path):

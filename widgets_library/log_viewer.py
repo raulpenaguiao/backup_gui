@@ -7,7 +7,7 @@ from tools_library.tracer import log_folder_path, current_log_path
 from tools_library import path_db
 from tools_library import deleted_files_db
 
-_LEVEL_RE = re.compile(r"^(\d+) L(\d) (.*)$")
+_LINE_RE = re.compile(r"^(\d{15})\s+(?:L(\d)\s+)?(.+?)>([^ ]+)\s+(.*?)\s*$")
 _PID_RE = re.compile(r"#(\d+)")
 
 
@@ -146,16 +146,39 @@ class LogViewer:
             min_level = 1
 
         rendered = []
-        for line in self._raw_lines:
-            m = _LEVEL_RE.match(line.rstrip("\n"))
+        last_second = None
+        last_caller = None
+
+        for raw in self._raw_lines:
+            line = raw.rstrip("\n").rstrip()
+            m = _LINE_RE.match(line)
             if m:
-                _, level, rest = m.groups()
-                if int(level) < min_level:
+                ts, level, caller_file, caller_name, message = m.groups()
+                if level is not None and int(level) < min_level:
                     continue
-                rendered.append(f"L{level} {_resolve_pids(rest)}\n")
+
+                second = ts[:12]  # YYMMDDHHMMSS, drop ms
+                caller = f"{os.path.basename(caller_file)}>{caller_name}"
+                message = _resolve_pids(message)
+
+                new_second = second != last_second
+                new_caller = caller != last_caller
+
+                if new_second:
+                    if rendered:
+                        rendered.append("\n")
+                    rendered.append(f"{second}\n")
+                    last_second = second
+
+                if new_caller or new_second:
+                    if new_caller and not new_second and last_caller is not None:
+                        rendered.append("\n")
+                    rendered.append(f"  {caller}\n")
+                    last_caller = caller
+
+                rendered.append(f"    {message}\n")
             else:
-                # Lines without a level token (errors, legacy lines) always show.
-                rendered.append(_resolve_pids(line.rstrip("\n")) + "\n")
+                rendered.append(_resolve_pids(line) + "\n")
 
         self._txt.config(state=tk.NORMAL)
         self._txt.delete("1.0", tk.END)
