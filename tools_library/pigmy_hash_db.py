@@ -112,8 +112,13 @@ def prune_files_not_in(conn, seen_ids):
     if not seen_ids:
         conn.execute("DELETE FROM files")
         return
-    placeholders = ",".join("?" * len(seen_ids))
-    conn.execute(f"DELETE FROM files WHERE id NOT IN ({placeholders})", seen_ids)
+    conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS _prune_seen (id INTEGER PRIMARY KEY)"
+    )
+    conn.execute("DELETE FROM _prune_seen")
+    conn.executemany("INSERT INTO _prune_seen (id) VALUES (?)", ((i,) for i in seen_ids))
+    conn.execute("DELETE FROM files WHERE id NOT IN (SELECT id FROM _prune_seen)")
+    conn.execute("DROP TABLE IF EXISTS _prune_seen")
 
 
 def all_files(conn):
