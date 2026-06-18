@@ -170,10 +170,11 @@ class PrepareEVWindow:
                 else:
                     var.set(step.auto_continue)
                 cb = tk.Checkbutton(
-                    row, variable=var,
+                    row, text=step.name, variable=var, anchor="w",
                     command=lambda s=step, v=var: self._state.set_auto_continue(s, v.get()))
-                cb.pack(side=tk.LEFT)
+                cb.pack(side=tk.LEFT, fill=tk.X, expand=True)
                 Tooltip(cb, "Automatically start this step as soon as the previous one finishes.")
+                continue
             tk.Label(row, text=step.name, anchor="w").pack(side=tk.LEFT, fill=tk.X, expand=True)
 
         self._cancel_btn.pack_forget()

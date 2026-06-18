@@ -3,14 +3,40 @@ import stat
 import hashlib
 import time
 import filecmp
+import threading
 from collections import deque
 import tools_library.tracer as tracer
 from tools_library.progress_tracker import ProgressTracker
 import tools_library.drive_variables as drive_variables
 import tools_library.pigmy_hash_db as pigmy_hash_db
 
+_IO_TIMEOUT = 60  # seconds before an I/O call is considered hung
+_IO_RETRIES = 1   # extra attempts after a timeout, for file hashing
+
+
+def _run_with_timeout(fn, timeout):
+    """Run fn() in a daemon thread; return its result, or raise TimeoutError / the fn's exception."""
+    result_box = [None]
+    exc_box = [None]
+
+    def _worker():
+        try:
+            result_box[0] = fn()
+        except Exception as e:
+            exc_box[0] = e
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        raise TimeoutError(f"timed out after {timeout}s")
+    if exc_box[0] is not None:
+        raise exc_box[0]
+    return result_box[0]
+
 _SKIP_NAMES = {drive_variables.pigmy_hash_file, drive_variables.kept_file,
-               drive_variables.rules_file, ".pigmy"}
+               drive_variables.rules_file, ".pigmy",
+               ".drive_info"}  # Filen sync metadata — not user data
 
 
 def compute_file_hash(file_path):
@@ -18,31 +44,45 @@ def compute_file_hash(file_path):
     return h
 
 
+def _do_hash_file(file_path):
+    """Raw I/O — may block on slow storage; always called via _run_with_timeout."""
+    st = os.stat(file_path)
+    if not stat.S_ISREG(st.st_mode):
+        return None, f"not a regular file (mode={oct(st.st_mode)})"
+    size = st.st_size
+    tracer.log(f"Hashing {tracer.pid(file_path)} ({size:,} bytes)", trace_level=1)
+    with open(file_path, "rb") as f:
+        if size < 1_000:
+            return hashlib.md5(f.read()).hexdigest(), None
+        elif size < 1_000_000:
+            return hashlib.sha1(f.read()).hexdigest(), None
+        else:
+            start = f.read(1_000_000)
+            f.seek(-1_000_000, 2)
+            end = f.read(1_000_000)
+            return hashlib.sha256(start + end).hexdigest(), None
+
+
 def _hash_file(file_path):
-    """Return (hash_str, None) on success or (None, error_str) on failure."""
-    try:
-        st = os.stat(file_path)
-        if not stat.S_ISREG(st.st_mode):
-            # FIFOs, sockets, block/char devices — open()+read() would block forever
-            err = f"not a regular file (mode={oct(st.st_mode)})"
-            tracer.log(f"Skipping {tracer.pid(file_path)}: {err}", trace_level=2)
-            return None, err
-        size = st.st_size
-        tracer.log(f"Hashing {tracer.pid(file_path)} ({size:,} bytes)", trace_level=1)
-        with open(file_path, "rb") as f:
-            if size < 1_000:
-                return hashlib.md5(f.read()).hexdigest(), None
-            elif size < 1_000_000:
-                return hashlib.sha1(f.read()).hexdigest(), None
+    """Return (hash_str, None) on success or (None, error_str) on failure.
+    Retries up to _IO_RETRIES times on timeout before giving up."""
+    for attempt in range(_IO_RETRIES + 1):
+        try:
+            h, err = _run_with_timeout(lambda fp=file_path: _do_hash_file(fp), _IO_TIMEOUT)
+            if err:
+                tracer.log(f"Skipping {tracer.pid(file_path)}: {err}", trace_level=2)
+            return h, err
+        except TimeoutError:
+            msg = f"timed out after {_IO_TIMEOUT}s"
+            if attempt < _IO_RETRIES:
+                tracer.log(f"Retrying {tracer.pid(file_path)}: {msg}", trace_level=2)
             else:
-                start = f.read(1_000_000)
-                f.seek(-1_000_000, 2)
-                end = f.read(1_000_000)
-                return hashlib.sha256(start + end).hexdigest(), None
-    except Exception as e:
-        err = str(e)
-        tracer.log_error(f"Cannot hash {tracer.pid(file_path)}: {err}")
-        return None, err
+                tracer.log_error(f"Cannot hash {tracer.pid(file_path)}: {msg}")
+                return None, msg
+        except Exception as e:
+            err = str(e)
+            tracer.log_error(f"Cannot hash {tracer.pid(file_path)}: {err}")
+            return None, err
 
 
 def _compute_folder_hash(child_hashes):
@@ -83,8 +123,11 @@ def index_vault(vault_path, progress_tracker=None, cancel_token=None):
         dirs_in_queue -= 1
 
         try:
-            entries = sorted(os.scandir(current), key=lambda e: e.name)
-        except OSError as e:
+            entries = _run_with_timeout(
+                lambda c=current: sorted(os.scandir(c), key=lambda e: e.name),
+                _IO_TIMEOUT,
+            )
+        except (OSError, TimeoutError) as e:
             err = str(e)
             tracer.log_error(f"Cannot scan directory {tracer.pid(current)}: {err}")
             skipped.append((current, err))
@@ -140,10 +183,10 @@ def index_vault(vault_path, progress_tracker=None, cancel_token=None):
             cached = None
             size = mtime = None
             try:
-                st = os.stat(file_path)
+                st = _run_with_timeout(lambda fp=file_path: os.stat(fp), _IO_TIMEOUT)
                 size, mtime = st.st_size, st.st_mtime
                 cached = pigmy_hash_db.lookup_file(conn, folder_id, filename)
-            except OSError:
+            except (OSError, TimeoutError):
                 pass  # let _hash_file's own error handling take over below
 
             if cached and cached["size"] == size and cached["mtime"] == mtime:
@@ -179,9 +222,12 @@ def index_vault(vault_path, progress_tracker=None, cancel_token=None):
         if progress_tracker:
             progress_tracker.set_current_value(processed, current_file=folder_path)
         try:
+            scan_entries = _run_with_timeout(
+                lambda fp=folder_path: list(os.scandir(fp)), _IO_TIMEOUT
+            )
             child_hashes = []
             is_tainted = False
-            for entry in os.scandir(folder_path):
+            for entry in scan_entries:
                 if entry.name in _SKIP_NAMES or entry.name.startswith(drive_variables.pigmy_hash_file):
                     continue
                 if entry.path in skipped_paths or entry.path in tainted_dirs:
@@ -195,7 +241,7 @@ def index_vault(vault_path, progress_tracker=None, cancel_token=None):
                            trace_level=4)
             else:
                 path_to_hash[folder_path] = _compute_folder_hash(child_hashes)
-        except OSError as e:
+        except (OSError, TimeoutError) as e:
             err = str(e)
             tracer.log_error(f"Cannot hash folder {tracer.pid(folder_path)}: {err}")
             skipped.append((folder_path, err))
