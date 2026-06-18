@@ -10,7 +10,7 @@ class ProgressTracker:
         self.finished = False
         self.current_file = ""
         # BFS phase (before hashing starts)
-        self.phase = "bfs"       # "bfs" | "hashing"
+        self.phase = "bfs"       # "bfs" | "hashing" | "grouping"
         self.bfs_progress = 0.0  # 0.0 -> 1.0 during BFS phase
 
     def start_progress_tracker(self, total_value):

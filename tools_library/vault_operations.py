@@ -291,16 +291,16 @@ def find_copies_in_external(main_pigmyhash, ev_pigmyhash, stop_event=None,
     """
     Find EV files that are copies of files already in the main vault, without
     re-walking or re-hashing the EV — both pigmyhash dicts are assumed already
-    indexed (one pass per vault). Only the hash-matching groups are verified
-    byte-by-byte via filecmp.
+    indexed (one pass per vault). Hash match is treated as identity; no byte-by-byte
+    verification is performed (SHA256/SHA1 collisions are negligible in practice).
 
     match_callback(ev_path, size, file_hash, copy_path): called for every EV file
-    confirmed to be a copy of copy_path (a file still present in the main vault).
+    that shares a hash with copy_path (a file still present in the main vault).
     """
     common_hashes = [h for h in ev_pigmyhash if h in main_pigmyhash]
     total = sum(len(ev_pigmyhash[h]) for h in common_hashes)
     tracer.log(f"Copies-in-EV detection: {len(common_hashes)} candidate hash(es), "
-               f"{total} EV group(s) to verify", trace_level=3)
+               f"{total} EV group(s) to check", trace_level=3)
     processed = 0
     if progress_callback:
         progress_callback(0, total)
@@ -318,30 +318,20 @@ def find_copies_in_external(main_pigmyhash, ev_pigmyhash, stop_event=None,
             processed += 1
             if progress_callback:
                 progress_callback(processed, total)
-            if not ev_files:
-                continue
-            ev_rep = ev_files[0]
-            try:
-                if filecmp.cmp(ev_rep, main_rep, shallow=False):
-                    for ev_path in ev_files:
-                        try:
-                            size = os.path.getsize(ev_path)
-                        except OSError:
-                            size = 0
-                        tracer.log(f"Copy of vault file found in EV: "
-                                   f"{tracer.pid(ev_path)} == {tracer.pid(main_rep)}",
-                                   trace_level=3)
-                        if match_callback:
-                            match_callback(ev_path, size, h, main_rep)
-                else:
-                    tracer.log(f"Hash collision (no byte match): "
-                               f"{tracer.pid(ev_rep)} vs {tracer.pid(main_rep)}", trace_level=1)
-            except Exception as e:
-                tracer.log_error(f"Compare error {ev_rep!r} vs {main_rep!r}: {e}")
+            for ev_path in ev_files:
+                try:
+                    size = os.path.getsize(ev_path)
+                except OSError:
+                    size = 0
+                tracer.log(f"Copy of vault file found in EV: "
+                           f"{tracer.pid(ev_path)} == {tracer.pid(main_rep)}",
+                           trace_level=3)
+                if match_callback:
+                    match_callback(ev_path, size, h, main_rep)
 
     if progress_callback:
         progress_callback(total, total)
-    tracer.log(f"Copies-in-EV detection complete: {processed}/{total} group(s) verified",
+    tracer.log(f"Copies-in-EV detection complete: {processed}/{total} group(s) checked",
                trace_level=3)
 
 

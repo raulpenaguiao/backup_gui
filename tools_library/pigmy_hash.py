@@ -2,7 +2,6 @@ import os
 import stat
 import hashlib
 import time
-import filecmp
 import threading
 from collections import deque
 import tools_library.tracer as tracer
@@ -248,8 +247,13 @@ def index_vault(vault_path, progress_tracker=None, cancel_token=None):
             tainted_dirs.add(folder_path)
         processed += 1
 
-    # ── Phase 4: Group by hash, then by bit-by-bit identity ──────────────────
-    pigmyhash = _group_by_content(path_to_hash)
+    # ── Phase 4: Group by hash ────────────────────────────────────────────────
+    tracer.log(f"Phase 4: grouping {len(path_to_hash):,} path(s) by hash", trace_level=3)
+    if progress_tracker:
+        progress_tracker.phase = "grouping"
+        progress_tracker.current_file = ""
+    pigmyhash = _group_by_hash(path_to_hash)
+    tracer.log(f"Phase 4 complete: {len(pigmyhash):,} unique hash(es)", trace_level=3)
 
     if skipped:
         tracer.log(f"Indexing complete: {len(skipped)} file(s)/dir(s) skipped due to access errors.",
@@ -258,40 +262,16 @@ def index_vault(vault_path, progress_tracker=None, cancel_token=None):
     return pigmyhash, skipped
 
 
-def _same_content(path1, path2):
-    try:
-        if os.path.isfile(path1) and os.path.isfile(path2):
-            return filecmp.cmp(path1, path2, shallow=False)
-        if os.path.isdir(path1) and os.path.isdir(path2):
-            return True
-        return False
-    except Exception:
-        return False
+def _group_by_hash(path_to_hash):
+    """Group paths by hash into {hash: [paths]} — one group per hash, no filecmp.
 
-
-def _group_by_content(path_to_hash):
-    """Group paths by hash, then split each hash group by bit-by-bit identity
-    (guards against hash collisions). Shared by index_vault (Phase 4) and
-    load_pigmy_hash, which both end up with a flat {path: hash} mapping —
-    one from a live scan, the other rebuilt from the cache db."""
-    hash_to_paths = {}
+    Hash collisions (SHA256/SHA1) are negligible in practice; byte-by-byte
+    verification via filecmp is too slow on USB storage with large vaults.
+    """
+    groups = {}
     for path, h in path_to_hash.items():
-        hash_to_paths.setdefault(h, []).append(path)
-
-    pigmyhash = {}
-    for h, paths in hash_to_paths.items():
-        groups = []
-        for path in paths:
-            placed = False
-            for group in groups:
-                if _same_content(path, group[0]):
-                    group.append(path)
-                    placed = True
-                    break
-            if not placed:
-                groups.append([path])
-        pigmyhash[h] = groups
-    return pigmyhash
+        groups.setdefault(h, []).append(path)
+    return {h: [paths] for h, paths in groups.items()}
 
 
 _LEGACY_JSON_FILE = ".pigmy-hash"  # old format, pre-dating .pigmy-hash-db
@@ -391,6 +371,6 @@ def load_pigmy_hash(vault_path):
         # index_vault never includes the vault root itself in pigmyhash.
         path_to_hash.pop(os.path.normpath(vault_path), None)
 
-        return _group_by_content(path_to_hash), indexed_at
+        return _group_by_hash(path_to_hash), indexed_at
     finally:
         conn.close()

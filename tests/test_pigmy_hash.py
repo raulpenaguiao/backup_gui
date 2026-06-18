@@ -145,6 +145,22 @@ class TestPigmyHashCache(unittest.TestCase):
         all_paths = [p for g in loaded.values() for grp in g for p in grp]
         self.assertTrue(any(p.endswith("sub") for p in all_paths))
 
+    def test_identical_files_land_in_same_hash_group(self):
+        self._write("a.txt", b"shared content")
+        self._write("b.txt", b"shared content")
+        pigmyhash, _ = index_vault(self.tmp)
+
+        matching = [
+            grp
+            for groups in pigmyhash.values()
+            for grp in groups
+            if any("a.txt" in p or "b.txt" in p for p in grp)
+        ]
+
+        self.assertEqual(len(matching), 1, "identical files must share one hash group")
+        self.assertTrue(any("a.txt" in p for p in matching[0]))
+        self.assertTrue(any("b.txt" in p for p in matching[0]))
+
     def test_save_pigmy_hash_returns_increasing_timestamps(self):
         self._write("a.txt", b"hello")
         pigmyhash, _ = index_vault(self.tmp)
@@ -256,6 +272,18 @@ class TestIndexVaultSkipped(unittest.TestCase):
 
         self.assertTrue(any("locked" in p for p, _ in skipped))
         self.assertTrue(any("cannot be accessed" in e for _, e in skipped))
+
+    def test_filen_metadata_folders_are_skipped(self):
+        self._write("normal.txt", b"keep me")
+        self._write(".filen.trash.local/chunk_uuid", b"encrypted chunk")
+        self._write(".drive_info/fileinfo.json", b"huge json index")
+        pigmyhash, skipped = index_vault(self.tmp)
+
+        all_paths = [p for groups in pigmyhash.values() for g in groups for p in g]
+        self.assertTrue(any("normal.txt" in p for p in all_paths), "normal file must be indexed")
+        self.assertFalse(any(".filen.trash.local" in p for p in all_paths))
+        self.assertFalse(any(".drive_info" in p for p in all_paths))
+        self.assertEqual(skipped, [])
 
     def test_cancelled_returns_none_pigmyhash(self):
         import threading

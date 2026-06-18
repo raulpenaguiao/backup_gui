@@ -293,6 +293,8 @@ class PrepareEVWindow:
         if pt.phase == "bfs":
             found = getattr(pt, "_scan_found", 0)
             status.config(text=f"Scanning: {found:,} found")
+        elif pt.phase == "grouping":
+            status.config(text="Grouping…")
         elif pt.loaded and pt.total_value > 0:
             status.config(text=f"Hashing: {pt.current_value:,} / {pt.total_value:,}")
         file_label.config(text=fname)
