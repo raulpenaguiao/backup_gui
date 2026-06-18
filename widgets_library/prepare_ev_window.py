@@ -135,6 +135,7 @@ class PrepareEVWindow:
         entry = tk.Entry(ntfy_row, textvariable=self._ntfy_channel)
         entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         entry.bind("<FocusOut>", lambda _e: self._save_settings())
+        tk.Button(ntfy_row, text="⎘", command=self._copy_ntfy_channel).pack(side=tk.LEFT, padx=(4, 0))
         tk.Button(ntfy_row, text="TEST", command=self._test_ntfy).pack(side=tk.LEFT, padx=(4, 0))
 
         self._ntfy_status_label = tk.Label(parent, text="", fg="#555", font=("Helvetica", 8),
@@ -584,6 +585,11 @@ class PrepareEVWindow:
                     text=f"ntfy error: {err}", fg="#c0392b"))
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _copy_ntfy_channel(self):
+        channel = self._ntfy_channel.get().strip()
+        self.root.clipboard_clear()
+        self.root.clipboard_append(channel)
 
     def _test_ntfy(self):
         channel = self._ntfy_channel.get().strip()
