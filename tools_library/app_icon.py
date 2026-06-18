@@ -1,40 +1,41 @@
+import io
+import base64
+import tkinter as tk
 from PIL import Image, ImageDraw
-from PIL.ImageTk import PhotoImage as TkPhotoImage
 
 
 def setup_icon(root):
-    photo = TkPhotoImage(_draw_icon())
+    img = _draw_icon()
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    photo = tk.PhotoImage(data=base64.b64encode(buf.getvalue()))
     root.iconphoto(True, photo)
     root._app_icon = photo  # prevent GC
 
 
 def _draw_icon():
     sz = 256
-    cx = sz // 2
     img = Image.new("RGBA", (sz, sz), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
 
-    bg    = (30, 110, 140)
-    white = (255, 255, 255)
-    light = (190, 225, 238)
+    # Teal background
+    d.rounded_rectangle([0, 0, sz - 1, sz - 1], radius=52, fill=(30, 110, 140))
 
-    # Background
-    d.rounded_rectangle([0, 0, sz - 1, sz - 1], radius=52, fill=bg)
+    # Ears (drawn before head so head overlaps inner portion)
+    d.ellipse([28, 56, 112, 150], fill=(200, 228, 236))   # left ear
+    d.ellipse([144, 56, 228, 150], fill=(200, 228, 236))  # right ear
 
-    # ── Save symbol (down-arrow) ──────────────────────────────────────────────
-    # Shaft
-    d.rounded_rectangle([cx - 14, 26, cx + 14, 86], radius=8, fill=white)
-    # Arrowhead — tip lands on the box lid below
-    d.polygon([cx - 40, 80, cx + 40, 80, cx, 120], fill=white)
+    # Head
+    d.ellipse([60, 58, 196, 194], fill=(255, 255, 255))
 
-    # ── Box lid (also acts as the arrow's landing line) ───────────────────────
-    d.rounded_rectangle([28, 118, 228, 156], radius=10, fill=light)
-    # Lid clasp
-    d.rounded_rectangle([cx - 28, 127, cx + 28, 147], radius=5, fill=white)
+    # Trunk — vertical bar then right curl
+    d.rounded_rectangle([146, 168, 170, 232], radius=12, fill=(255, 255, 255))
+    d.rounded_rectangle([170, 214, 212, 238], radius=12, fill=(255, 255, 255))
 
-    # ── Box body ──────────────────────────────────────────────────────────────
-    d.rounded_rectangle([40, 152, 216, 232], radius=10, fill=white)
-    # Horizontal strap
-    d.rectangle([40, 172, 216, 186], fill=light)
+    # Eyes with highlight
+    d.ellipse([88, 102, 116, 130], fill=(30, 110, 140))
+    d.ellipse([96, 108, 108, 120], fill=(255, 255, 255))
+    d.ellipse([140, 102, 168, 130], fill=(30, 110, 140))
+    d.ellipse([148, 108, 160, 120], fill=(255, 255, 255))
 
     return img
